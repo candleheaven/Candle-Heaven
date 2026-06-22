@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, CircularProgress,
-  Chip, useTheme, Divider,
+  useTheme, Divider,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
@@ -16,7 +16,7 @@ import {
   BarChart, Bar, Line, ComposedChart,
 } from 'recharts';
 import InventoryIcon from '@mui/icons-material/Inventory2';
-import { getAnalytics, adminGetAllProducts, getProfitAnalytics, type AnalyticsData, type ProfitAnalytics, type StockValueEntry } from '../../services/admin';
+import { getAnalytics, getProfitAnalytics, type AnalyticsData, type ProfitAnalytics, type StockValueEntry } from '../../services/admin';
 
 const GOLD = '#C9A96E';
 const NAVY = '#132040';
@@ -455,15 +455,6 @@ export default function Dashboard() {
         missingCost={data.stockValueMissingCost}
       />
 
-      {/* Low stock alerts */}
-      {data.lowStockCount > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2" sx={{ color: '#F44336', mb: 1 }}>
-            ⚠ Low Stock Alert
-          </Typography>
-          <LowStockList />
-        </Box>
-      )}
     </Box>
   );
 }
@@ -532,26 +523,3 @@ function StockValueWidget({ total, byCategory, missingCost }: { total: number; b
   );
 }
 
-function LowStockList() {
-  const [products, setProducts] = useState<Array<{ id: string; name: string; stock: number; category: string }>>([]);
-
-  useEffect(() => {
-    adminGetAllProducts().then(ps =>
-      setProducts(ps.filter(p => p.stock < 20).sort((a, b) => a.stock - b.stock))
-    );
-  }, []);
-
-  return (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-      {products.map(p => (
-        <Chip
-          key={p.id}
-          label={`${p.name} — ${p.stock} left`}
-          color={p.stock === 0 ? 'error' : 'warning'}
-          size="small"
-          variant="outlined"
-        />
-      ))}
-    </Box>
-  );
-}
