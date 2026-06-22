@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Products ──────────────────────────────────────────────────────────────
+    // Public read so customers can browse the shop.
+    // Only authenticated employees (admin claim) can write.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // ── Orders ────────────────────────────────────────────────────────────────
+    // Anyone can place an order (anonymous checkout).
+    // Customers can read their own orders.
+    // Employees can read, update, and delete any order.
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read, update: if request.auth != null && (
+        request.auth.token.admin == true ||
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // ── Purchases ─────────────────────────────────────────────────────────────
+    // Internal — employees only.
+    match /purchases/{purchaseId} {
+      allow read, write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // ── Suppliers ─────────────────────────────────────────────────────────────
+    match /suppliers/{supplierId} {
+      allow read, write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // ── Promotions ────────────────────────────────────────────────────────────
+    // Customers validate promo codes at checkout, so public read is needed.
+    // Only employees can create or modify promotions.
+    match /promotions/{promoId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+  }
+}
