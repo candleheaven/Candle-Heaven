@@ -109,6 +109,7 @@ export default function CreateOrder() {
 
   // Order settings
   const [status, setStatus] = useState<OrderStatus>('confirmed');
+  const [fulfillmentType, setFulfillmentType] = useState<'royal_express' | 'pickme' | 'pickup'>('royal_express');
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
   const [discountValue, setDiscountValue] = useState(0);
@@ -359,7 +360,7 @@ export default function CreateOrder() {
         customer, items, subtotal,
         packagingItems: pkgCartItems.length > 0 ? pkgCartItems : undefined,
         deliveryFee: deliveryFee || undefined,
-        total, status,
+        total, status, fulfillmentType,
         ...(discountAmount > 0 ? { promoCode: 'Admin Discount', promoDiscount: discountAmount } : {}),
       };
       const orderNumber = await adminPlaceOrder(orderPayload, status);
@@ -558,6 +559,12 @@ export default function CreateOrder() {
                 <Divider sx={{ my: 2.5 }} />
 
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>Order Settings</Typography>
+                <TextField select label="Delivery Method" value={fulfillmentType}
+                  onChange={e => setFulfillmentType(e.target.value as typeof fulfillmentType)} fullWidth size="small" sx={{ mb: 1.5 }}>
+                  <MenuItem value="royal_express">Royal Express</MenuItem>
+                  <MenuItem value="pickme">PickMe</MenuItem>
+                  <MenuItem value="pickup">Customer Pickup</MenuItem>
+                </TextField>
                 <TextField select label="Initial Status" value={status}
                   onChange={e => setStatus(e.target.value as OrderStatus)} fullWidth size="small"
                   helperText="Set to 'Confirmed' for orders already agreed upon">

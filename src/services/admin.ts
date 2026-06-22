@@ -1,9 +1,9 @@
 import {
   collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc,
-  query, orderBy, serverTimestamp, increment, deleteField,
+  query, orderBy, where, serverTimestamp, increment, deleteField,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Product, Order, OrderStatus, CartItem, Purchase, PurchaseItem, Supplier } from '../types';
+import type { Product, Order, OrderStatus, CartItem, Purchase, PurchaseItem, Supplier, Settlement, PaymentInfo, CourierAssignment } from '../types';
 import { MOCK_PRODUCTS } from './mockData';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true' || !import.meta.env.VITE_FIREBASE_PROJECT_ID;
@@ -659,6 +659,7 @@ export async function getProductAnalytics(lookbackMonths = 6): Promise<ProductMo
 // ─── Purchases ────────────────────────────────────────────────────────────────
 
 const PURCHASES_KEY = 'ch_mock_purchases';
+const SETTLEMENTS_KEY = 'ch_mock_settlements';
 const PURCHASES_SEEDED_KEY = 'ch_purchases_seeded';
 
 function generatePurchaseNumber(): string {
@@ -1196,4 +1197,159 @@ export async function getOrderProfitBreakdown(order: AdminOrder): Promise<OrderP
     grossProfit: Math.round(grossProfit),
     profitMargin: parseFloat(profitMargin.toFixed(1)),
   };
+}
+
+// ─── Settlements ──────────────────────────────────────────────────────────────
+
+export async function adminGetAllSettlements(): Promise<Settlement[]> {
+  if (USE_MOCK) {
+    const raw = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    return raw.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  const snap = await getDocs(query(collection(db, 'settlements'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement));
+}
+
+export async function adminRecordPayment(orderId: string, paymentInfo: PaymentInfo): Promise<void> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(
+      orders.map(o => o.id === orderId ? { ...o, paymentStatus: 'paid', paymentInfo } : o)
+    ));
+    return;
+  }
+  await updateDoc(doc(db, 'orders', orderId), { paymentStatus: 'paid', paymentInfo });
+}
+
+export async function adminMarkOrderUnpaid(orderId: string): Promise<void> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(
+      orders.map(o => {
+        if (o.id !== orderId) return o;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { paymentStatus: _ps, paymentInfo: _pi, ...rest } = o;
+        return rest as AdminOrder;
+      })
+    ));
+    return;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await updateDoc(doc(db, 'orders', orderId), { paymentStatus: deleteField(), paymentInfo: deleteField() } as any);
+}
+
+/** Create a new courier invoice settlement (without linking orders — orders assigned separately). */
+export async function adminCreateCourierInvoice(
+  reference: string,
+  date: string,
+  totalAmount: number,
+  courierName?: string,
+  notes?: string,
+): Promise<string> {
+  const settlement: Omit<Settlement, 'id'> = {
+    type: 'courier_invoice',
+    reference,
+    date,
+    totalAmount,
+    courierName,
+    notes,
+    isCompleted: false,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (USE_MOCK) {
+    const id = `SI-${Date.now()}`;
+    const existing = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    localStorage.setItem(SETTLEMENTS_KEY, JSON.stringify([{ ...settlement, id }, ...existing]));
+    return id;
+  }
+
+  const ref = await addDoc(collection(db, 'settlements'), settlement);
+  await updateDoc(ref, { id: ref.id });
+  return ref.id;
+}
+
+/** Get all orders assigned to a specific courier invoice. */
+export async function adminGetOrdersByInvoiceId(invoiceId: string): Promise<AdminOrder[]> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    return orders.filter(o => o.courierInvoice?.invoiceId === invoiceId);
+  }
+  const snap = await getDocs(query(collection(db, 'orders'), where('courierInvoice.invoiceId', '==', invoiceId)));
+  return snap.docs.map(d => {
+    const data = d.data();
+    return { id: d.id, ...data, createdAt: data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt } as AdminOrder;
+  });
+}
+
+/** Assign an order to a courier invoice with the actual shipping fee charged by courier. */
+export async function adminAssignOrderToInvoice(
+  orderId: string,
+  assignment: CourierAssignment,
+): Promise<void> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(
+      orders.map(o => o.id === orderId ? { ...o, courierInvoice: assignment } : o)
+    ));
+    return;
+  }
+  await updateDoc(doc(db, 'orders', orderId), { courierInvoice: assignment });
+}
+
+/** Remove courier invoice assignment from an order. */
+export async function adminUnassignOrderFromInvoice(orderId: string): Promise<void> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(
+      orders.map(o => {
+        if (o.id !== orderId) return o;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { courierInvoice: _ci, ...rest } = o;
+        return rest as AdminOrder;
+      })
+    ));
+    return;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await updateDoc(doc(db, 'orders', orderId), { courierInvoice: deleteField() } as any);
+}
+
+/** Toggle completion status of a courier invoice. */
+export async function adminMarkInvoiceCompleted(invoiceId: string, isCompleted: boolean): Promise<void> {
+  if (USE_MOCK) {
+    const list = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    localStorage.setItem(SETTLEMENTS_KEY, JSON.stringify(
+      list.map(s => s.id === invoiceId ? { ...s, isCompleted } : s)
+    ));
+    return;
+  }
+  await updateDoc(doc(db, 'settlements', invoiceId), { isCompleted });
+}
+
+/** Get all open (not completed) courier invoices — used for assigning orders. */
+export async function adminGetOpenCourierInvoices(): Promise<Settlement[]> {
+  if (USE_MOCK) {
+    const list = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    return list.filter(s => s.type === 'courier_invoice' && !s.isCompleted);
+  }
+  const snap = await getDocs(query(
+    collection(db, 'settlements'),
+    where('type', '==', 'courier_invoice'),
+    where('isCompleted', '==', false),
+    orderBy('date', 'desc'),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement));
+}
+
+/** Update invoice received amount. */
+export async function adminUpdateInvoiceAmount(invoiceId: string, totalAmount: number): Promise<void> {
+  if (USE_MOCK) {
+    const list = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    localStorage.setItem(SETTLEMENTS_KEY, JSON.stringify(
+      list.map(s => s.id === invoiceId ? { ...s, totalAmount } : s)
+    ));
+    return;
+  }
+  await updateDoc(doc(db, 'settlements', invoiceId), { totalAmount });
 }

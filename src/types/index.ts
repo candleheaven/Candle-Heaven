@@ -53,6 +53,39 @@ export interface CustomerInfo {
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'returned' | 'cancelled';
+export type FulfillmentType = 'royal_express' | 'pickme' | 'pickup';
+
+export type PaymentMethod = 'cash' | 'bank_transfer' | 'courier_invoice';
+
+export interface PaymentInfo {
+  method: PaymentMethod;
+  reference: string;
+  amount: number;
+  date: string;           // YYYY-MM-DD
+  notes?: string;
+  settlementId?: string;
+}
+
+export interface CourierAssignment {
+  invoiceId: string;
+  invoiceNumber: string;
+  actualShippingFee: number;  // actual fee charged by courier (may differ from order.deliveryFee)
+}
+
+export interface Settlement {
+  id: string;
+  type: PaymentMethod;
+  reference: string;        // invoice number for courier_invoice, ref # for cash/bank
+  totalAmount: number;      // received amount for courier_invoice, paid amount for cash/bank
+  date: string;             // YYYY-MM-DD
+  orderIds?: string[];      // used for cash/bank settlements (linked at creation)
+  orderNumbers?: string[];  // used for cash/bank settlements
+  notes?: string;
+  createdAt: string;
+  // Courier invoice specific:
+  courierName?: string;
+  isCompleted?: boolean;
+}
 
 export interface Order {
   id?: string;
@@ -74,6 +107,10 @@ export interface Order {
   courierTicketId?: string;
   packagingItems?: CartItem[];  // Internal packing materials — not shown to customer
   damagedItems?: { cartKey: string; damagedQty: number }[];
+  paymentStatus?: 'unpaid' | 'paid';
+  paymentInfo?: PaymentInfo;
+  courierInvoice?: CourierAssignment;
+  fulfillmentType?: FulfillmentType;
 }
 
 export type ProductCategory = 'wax' | 'fragrance' | 'wicks' | 'dye' | 'molds' | 'tools' | 'kits' | 'packaging' | 'all';

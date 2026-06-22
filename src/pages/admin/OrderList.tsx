@@ -19,7 +19,8 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import SendIcon from '@mui/icons-material/Send';
 import SaveIcon from '@mui/icons-material/Save';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
-import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUpdateOrderField, adminUpdateOrderItems, getOrderProfitBreakdown, type AdminOrder, type OrderProfitBreakdown } from '../../services/admin';
+import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUpdateOrderField, adminUpdateOrderItems, getOrderProfitBreakdown, adminRecordPayment, adminMarkOrderUnpaid, adminGetOpenCourierInvoices, adminAssignOrderToInvoice, adminUnassignOrderFromInvoice, type AdminOrder, type OrderProfitBreakdown } from '../../services/admin';
+import type { PaymentMethod, PaymentInfo, Settlement, FulfillmentType } from '../../types';
 import { trackShipment, createCourierOrder } from '../../services/courier';
 import type { TrackingInfo, CourierOrderInput } from '../../services/courier';
 import type { OrderStatus, CartItem, Product } from '../../types';
@@ -129,6 +130,7 @@ export default function OrderList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [detailOrder, setDetailOrder] = useState<AdminOrder | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState(
@@ -176,6 +178,20 @@ export default function OrderList() {
   const [profitLoading, setProfitLoading] = useState(false);
   const [profitVisible, setProfitVisible] = useState(false);
 
+  // Payment recording
+  const [paymentFormOpen, setPaymentFormOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState<{ method: PaymentMethod; reference: string; amount: number; date: string; notes: string }>({
+    method: 'cash', reference: '', amount: 0, date: '', notes: '',
+  });
+  const [savingPayment, setSavingPayment] = useState(false);
+
+  // Courier invoice assignment
+  const [invoiceAssignOpen, setInvoiceAssignOpen] = useState(false);
+  const [openInvoices, setOpenInvoices] = useState<Settlement[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [assignForm, setAssignForm] = useState({ invoiceId: '', invoiceNumber: '', actualShippingFee: '' });
+  const [savingAssign, setSavingAssign] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     adminGetAllOrders().then(o => { setOrders(o); setLoading(false); });
@@ -190,6 +206,8 @@ export default function OrderList() {
       setTrackingInfo(null);
       setTrackingError('');
       setTrackingVisible(false);
+      setPaymentFormOpen(false);
+      setPaymentForm({ method: 'cash', reference: '', amount: detailOrder.total, date: new Date().toISOString().slice(0, 10), notes: '' });
     }
   }, [detailOrder?.orderNumber]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -230,6 +248,90 @@ export default function OrderList() {
     setSuccessMsg(`Waybill ${num} saved for ${detailOrder.orderNumber}`);
   }
 
+  async function handleRecordPayment() {
+    if (!detailOrder) return;
+    setSavingPayment(true);
+    const info: PaymentInfo = {
+      method: paymentForm.method,
+      reference: paymentForm.reference.trim(),
+      amount: paymentForm.amount,
+      date: paymentForm.date,
+      ...(paymentForm.notes.trim() && { notes: paymentForm.notes.trim() }),
+    };
+    await adminRecordPayment(detailOrder.id, info);
+    const updated = { ...detailOrder, paymentStatus: 'paid' as const, paymentInfo: info };
+    setDetailOrder(updated);
+    setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+    setPaymentFormOpen(false);
+    setSavingPayment(false);
+    setSuccessMsg(`Payment recorded for ${detailOrder.orderNumber}`);
+  }
+
+  async function handleMarkUnpaid() {
+    if (!detailOrder) return;
+    await adminMarkOrderUnpaid(detailOrder.id);
+    const { paymentStatus: _ps, paymentInfo: _pi, ...rest } = detailOrder;
+    const updated = rest as AdminOrder;
+    setDetailOrder(updated);
+    setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+    setPaymentForm(f => ({ ...f, amount: detailOrder.total }));
+  }
+
+  async function handleOpenInvoiceAssign() {
+    setInvoiceAssignOpen(true);
+    if (openInvoices.length === 0) {
+      setLoadingInvoices(true);
+      const inv = await adminGetOpenCourierInvoices();
+      setOpenInvoices(inv);
+      setLoadingInvoices(false);
+    }
+    // Pre-fill from current assignment
+    if (detailOrder?.courierInvoice) {
+      setAssignForm({
+        invoiceId: detailOrder.courierInvoice.invoiceId,
+        invoiceNumber: detailOrder.courierInvoice.invoiceNumber,
+        actualShippingFee: String(detailOrder.courierInvoice.actualShippingFee),
+      });
+    } else {
+      setAssignForm({ invoiceId: '', invoiceNumber: '', actualShippingFee: String(detailOrder?.deliveryFee ?? 0) });
+    }
+  }
+
+  async function handleSaveAssignment() {
+    if (!detailOrder || !assignForm.invoiceId) return;
+    setSavingAssign(true);
+    const assignment = {
+      invoiceId: assignForm.invoiceId,
+      invoiceNumber: assignForm.invoiceNumber,
+      actualShippingFee: parseFloat(assignForm.actualShippingFee) || 0,
+    };
+    await adminAssignOrderToInvoice(detailOrder.id, assignment);
+    const updated = { ...detailOrder, courierInvoice: assignment };
+    setDetailOrder(updated);
+    setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+    setInvoiceAssignOpen(false);
+    setSavingAssign(false);
+    setSuccessMsg(`Order ${detailOrder.orderNumber} linked to invoice ${assignForm.invoiceNumber}`);
+  }
+
+  async function handleFulfillmentChange(type: FulfillmentType) {
+    if (!detailOrder) return;
+    await adminUpdateOrderField(detailOrder.id, { fulfillmentType: type });
+    const updated = { ...detailOrder, fulfillmentType: type };
+    setDetailOrder(updated);
+    setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+  }
+
+  async function handleUnassignInvoice() {
+    if (!detailOrder) return;
+    await adminUnassignOrderFromInvoice(detailOrder.id);
+    const { courierInvoice: _ci, ...rest } = detailOrder;
+    const updated = rest as AdminOrder;
+    setDetailOrder(updated);
+    setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+    setSuccessMsg(`Order ${detailOrder.orderNumber} removed from invoice`);
+  }
+
   async function handleTrack() {
     if (!detailOrder?.waybillNumber) return;
     setTrackingLoading(true);
@@ -248,6 +350,7 @@ export default function OrderList() {
   function openCourierOrderDialog(order: AdminOrder) {
     setCourierOrderForm({
       orderNo: order.orderNumber,
+      waybillNumber: waybillInput.trim() || order.waybillNumber,
       customerName: order.customer.name,
       customerAddress: order.customer.address,
       customerPhone: order.customer.phone,
@@ -377,6 +480,8 @@ export default function OrderList() {
 
   const filtered = orders.filter(o => {
     const matchStatus = statusFilter === 'all' || o.status === statusFilter;
+    const matchPayment = paymentFilter === 'all' ||
+      (paymentFilter === 'paid' ? o.paymentStatus === 'paid' : o.paymentStatus !== 'paid');
     const q = search.toLowerCase();
     const matchSearch = !q ||
       o.orderNumber.toLowerCase().includes(q) ||
@@ -384,7 +489,7 @@ export default function OrderList() {
       (o.customer.email ?? '').toLowerCase().includes(q) ||
       o.customer.city.toLowerCase().includes(q) ||
       (o.waybillNumber ?? '').toLowerCase().includes(q);
-    return matchStatus && matchSearch;
+    return matchStatus && matchPayment && matchSearch;
   });
 
   const countByStatus = (s: OrderStatus) => orders.filter(o => o.status === s).length;
@@ -406,11 +511,18 @@ export default function OrderList() {
       </Snackbar>
 
       {/* Status filter chips */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
         <Chip label={`All (${orders.length})`} onClick={() => setStatusFilter('all')} variant={statusFilter === 'all' ? 'filled' : 'outlined'} color={statusFilter === 'all' ? 'secondary' : 'default'} sx={{ fontWeight: statusFilter === 'all' ? 700 : 400 }} />
         {ALL_STATUSES.map(s => (
           <Chip key={s} label={`${STATUS_CONFIG[s].label} (${countByStatus(s)})`} onClick={() => setStatusFilter(s)} variant={statusFilter === s ? 'filled' : 'outlined'} color={statusFilter === s ? STATUS_CONFIG[s].color : 'default'} sx={{ fontWeight: statusFilter === s ? 700 : 400, textTransform: 'capitalize' }} />
         ))}
+      </Box>
+
+      {/* Payment filter chips */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+        <Chip label="Any payment" size="small" onClick={() => setPaymentFilter('all')} variant={paymentFilter === 'all' ? 'filled' : 'outlined'} color={paymentFilter === 'all' ? 'default' : 'default'} sx={{ fontWeight: paymentFilter === 'all' ? 700 : 400 }} />
+        <Chip label="Paid" size="small" onClick={() => setPaymentFilter('paid')} variant={paymentFilter === 'paid' ? 'filled' : 'outlined'} color={paymentFilter === 'paid' ? 'success' : 'default'} sx={{ fontWeight: paymentFilter === 'paid' ? 700 : 400 }} />
+        <Chip label="Unpaid" size="small" onClick={() => setPaymentFilter('unpaid')} variant={paymentFilter === 'unpaid' ? 'filled' : 'outlined'} color={paymentFilter === 'unpaid' ? 'error' : 'default'} sx={{ fontWeight: paymentFilter === 'unpaid' ? 700 : 400 }} />
       </Box>
 
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
@@ -482,7 +594,7 @@ export default function OrderList() {
       </Card>
 
       {/* ── Order Detail Dialog ─────────────────────────────────────────────── */}
-      <Dialog open={Boolean(detailOrder)} onClose={() => { setDetailOrder(null); setEditingItems(false); setEditItems([]); setEditPackagingItems([]); setProfitBreakdown(null); setProfitVisible(false); }} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={Boolean(detailOrder)} onClose={() => { setDetailOrder(null); setEditingItems(false); setEditItems([]); setEditPackagingItems([]); setProfitBreakdown(null); setProfitVisible(false); setPaymentFormOpen(false); }} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         {detailOrder && (
           <>
             <DialogTitle sx={{ pb: 1 }}>
@@ -887,6 +999,74 @@ export default function OrderList() {
 
               <Divider sx={{ my: 2 }} />
 
+              {/* Payment */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Payment</Typography>
+                {detailOrder.paymentStatus === 'paid'
+                  ? <Chip label="PAID" color="success" size="small" sx={{ fontWeight: 700 }} />
+                  : <Chip label="UNPAID" color="error" size="small" sx={{ fontWeight: 700 }} />}
+              </Box>
+
+              {detailOrder.paymentStatus === 'paid' && detailOrder.paymentInfo ? (
+                <Box sx={{ bgcolor: '#F0FDF4', border: '1px solid', borderColor: 'success.light', borderRadius: 1.5, p: 1.5, mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {{ cash: 'Cash', bank_transfer: 'Bank Transfer', courier_invoice: 'Courier Invoice' }[detailOrder.paymentInfo.method]}
+                        {detailOrder.paymentInfo.reference ? ` · ${detailOrder.paymentInfo.reference}` : ''}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {detailOrder.paymentInfo.date}
+                        {detailOrder.paymentInfo.notes ? ` · ${detailOrder.paymentInfo.notes}` : ''}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(detailOrder.paymentInfo.amount)}</Typography>
+                      <Button size="small" sx={{ fontSize: 11, color: 'text.secondary', textTransform: 'none', minWidth: 0 }} onClick={handleMarkUnpaid}>
+                        Undo
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              ) : !paymentFormOpen ? (
+                <Button size="small" variant="outlined" color="success" onClick={() => setPaymentFormOpen(true)} sx={{ mb: 1.5 }}>
+                  Record Payment
+                </Button>
+              ) : (
+                <Stack spacing={1.5} sx={{ mb: 1.5 }}>
+                  <TextField select label="Method" size="small" value={paymentForm.method}
+                    onChange={e => setPaymentForm(f => ({ ...f, method: e.target.value as PaymentMethod }))}>
+                    <MenuItem value="cash">Cash</MenuItem>
+                    <MenuItem value="bank_transfer">Bank Transfer</MenuItem>
+                    <MenuItem value="courier_invoice">Courier Invoice</MenuItem>
+                  </TextField>
+                  <TextField label="Reference #" size="small" value={paymentForm.reference}
+                    onChange={e => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
+                    placeholder="Bank ref, cheque #, invoice #" />
+                  <Box sx={{ display: 'flex', gap: 1.5 }}>
+                    <TextField label="Amount (LKR)" size="small" type="number" value={paymentForm.amount}
+                      onChange={e => setPaymentForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
+                      slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                      sx={{ flex: 1 }} />
+                    <TextField label="Date" size="small" type="date" value={paymentForm.date}
+                      onChange={e => setPaymentForm(f => ({ ...f, date: e.target.value }))}
+                      sx={{ flex: 1 }} />
+                  </Box>
+                  <TextField label="Notes (optional)" size="small" value={paymentForm.notes}
+                    onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))} />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button size="small" onClick={() => setPaymentFormOpen(false)} disabled={savingPayment}>Cancel</Button>
+                    <Button size="small" variant="contained" color="success" onClick={handleRecordPayment}
+                      disabled={savingPayment || !paymentForm.date}
+                      startIcon={savingPayment ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}>
+                      {savingPayment ? 'Saving…' : 'Save Payment'}
+                    </Button>
+                  </Box>
+                </Stack>
+              )}
+
+              <Divider sx={{ my: 2 }} />
+
               {/* Status */}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Status:</Typography>
@@ -897,12 +1077,27 @@ export default function OrderList() {
 
               <Divider sx={{ mb: 2 }} />
 
-              {/* ── Royal Express Courier ─────────────────────────────────── */}
+              {/* ── Delivery ──────────────────────────────────────────────── */}
               <Box sx={{ bgcolor: '#F8F9FC', border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <LocalShippingIcon sx={{ color: NAVY, fontSize: 20 }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: NAVY }}>Royal Express Courier</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocalShippingIcon sx={{ color: NAVY, fontSize: 20 }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: NAVY }}>Delivery</Typography>
+                  </Box>
+                  <TextField select size="small" value={detailOrder.fulfillmentType ?? 'royal_express'}
+                    onChange={e => handleFulfillmentChange(e.target.value as FulfillmentType)}
+                    sx={{ minWidth: 160 }}>
+                    <MenuItem value="royal_express">Royal Express</MenuItem>
+                    <MenuItem value="pickme">PickMe</MenuItem>
+                    <MenuItem value="pickup">Customer Pickup</MenuItem>
+                  </TextField>
                 </Box>
+
+                {(detailOrder.fulfillmentType ?? 'royal_express') !== 'royal_express' ? (
+                  <Typography variant="body2" color="text.secondary">
+                    {detailOrder.fulfillmentType === 'pickme' ? 'Order will be delivered via PickMe.' : 'Customer will collect this order.'}
+                  </Typography>
+                ) : (<>
 
                 {/* Waybill number */}
                 <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.75 }}>Waybill Number</Typography>
@@ -939,16 +1134,17 @@ export default function OrderList() {
 
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<SendIcon />}
-                    onClick={() => openCourierOrderDialog(detailOrder)}
-                    disabled={!['confirmed', 'shipped'].includes(detailOrder.status)}
-                  >
-                    Create Courier Order
-                  </Button>
+                  {detailOrder.status === 'confirmed' && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="secondary"
+                      startIcon={<SendIcon />}
+                      onClick={() => openCourierOrderDialog(detailOrder)}
+                    >
+                      Create Courier Order
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     variant="outlined"
@@ -960,9 +1156,9 @@ export default function OrderList() {
                   </Button>
                 </Box>
 
-                {!['confirmed', 'shipped'].includes(detailOrder.status) && (
+                {detailOrder.status === 'pending' && (
                   <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.75 }}>
-                    Courier order creation available for Confirmed or Shipped orders.
+                    Confirm the order before creating a courier order.
                   </Typography>
                 )}
 
@@ -975,6 +1171,53 @@ export default function OrderList() {
                     <TrackingTimeline info={trackingInfo} loading={trackingLoading} error={trackingError} />
                   </Box>
                 )}
+
+                {/* Invoice assignment */}
+                <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
+                      Settlement Invoice
+                    </Typography>
+                    {detailOrder.courierInvoice ? (
+                      <Button size="small" sx={{ fontSize: 11, color: 'text.secondary', textTransform: 'none', minWidth: 0 }} onClick={handleUnassignInvoice}>
+                        Remove
+                      </Button>
+                    ) : (
+                      <Button size="small" variant="outlined" sx={{ fontSize: 11, textTransform: 'none' }} onClick={handleOpenInvoiceAssign}>
+                        Assign Invoice
+                      </Button>
+                    )}
+                  </Box>
+                  {detailOrder.courierInvoice ? (
+                    <Box sx={{ bgcolor: '#FFFBEB', border: '1px solid', borderColor: 'warning.light', borderRadius: 1.5, p: 1.25 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                            {detailOrder.courierInvoice.invoiceNumber}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Actual shipping: LKR {detailOrder.courierInvoice.actualShippingFee.toLocaleString()}
+                            {detailOrder.deliveryFee !== undefined && (
+                              <> · Charged: LKR {detailOrder.deliveryFee.toLocaleString()}
+                              {Math.abs(detailOrder.deliveryFee - detailOrder.courierInvoice.actualShippingFee) >= 1 && (
+                                <> · Diff: {detailOrder.deliveryFee - detailOrder.courierInvoice.actualShippingFee > 0 ? '+' : ''}
+                                LKR {(detailOrder.deliveryFee - detailOrder.courierInvoice.actualShippingFee).toLocaleString()}</>
+                              )}</>
+                            )}
+                          </Typography>
+                        </Box>
+                        <Button size="small" variant="text" sx={{ fontSize: 11, textTransform: 'none' }} onClick={handleOpenInvoiceAssign}>
+                          Edit
+                        </Button>
+                      </Box>
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.disabled">
+                      Not linked to a courier invoice yet.
+                    </Typography>
+                  )}
+                </Box>
+                </>)}
               </Box>
             </DialogContent>
 
@@ -983,6 +1226,55 @@ export default function OrderList() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* ── Assign Courier Invoice Dialog ────────────────────────────────────── */}
+      <Dialog open={invoiceAssignOpen} onClose={() => !savingAssign && setInvoiceAssignOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Assign to Courier Invoice
+          {detailOrder && (
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.25 }}>
+              {detailOrder.orderNumber} — delivery fee charged: {detailOrder.deliveryFee != null ? `LKR ${detailOrder.deliveryFee.toLocaleString()}` : 'none'}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {loadingInvoices && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><CircularProgress size={16} /><Typography variant="body2">Loading invoices…</Typography></Box>}
+            {!loadingInvoices && openInvoices.length === 0 && (
+              <Alert severity="info">No open courier invoices. Create one from the Settlements page first.</Alert>
+            )}
+            {!loadingInvoices && openInvoices.length > 0 && (
+              <TextField select label="Courier Invoice" size="small" value={assignForm.invoiceId}
+                onChange={e => {
+                  const inv = openInvoices.find(i => i.id === e.target.value);
+                  setAssignForm(f => ({ ...f, invoiceId: e.target.value, invoiceNumber: inv?.reference ?? '' }));
+                }}>
+                {openInvoices.map(inv => (
+                  <MenuItem key={inv.id} value={inv.id}>
+                    {inv.reference} — {inv.date}
+                    {inv.courierName ? ` (${inv.courierName})` : ''}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+            <TextField
+              label="Actual Shipping Fee (LKR)" type="number" size="small"
+              value={assignForm.actualShippingFee}
+              onChange={e => setAssignForm(f => ({ ...f, actualShippingFee: e.target.value }))}
+              slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+              helperText="Actual fee charged by courier — may differ from amount billed to customer"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInvoiceAssignOpen(false)} disabled={savingAssign}>Cancel</Button>
+          <Button variant="contained" color="secondary" onClick={handleSaveAssignment}
+            disabled={savingAssign || !assignForm.invoiceId}
+            startIcon={savingAssign ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}>
+            {savingAssign ? 'Saving…' : 'Assign'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* ── Return / Damage Dialog ──────────────────────────────────────────── */}

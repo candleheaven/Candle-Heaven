@@ -14,6 +14,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import ConfirmationNumberIcon from '@mui/icons-material/ConfirmationNumber';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import { useAdminAuth } from '../../context/AdminAuthContext';
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { label: 'Orders', icon: <ShoppingBagIcon />, path: 'orders' },
   { label: 'Analytics', icon: <BarChartIcon />, path: 'analytics' },
   { label: 'Purchases', icon: <ReceiptLongIcon />, path: 'purchases' },
+  { label: 'Settlements', icon: <AccountBalanceIcon />, path: 'settlements' },
   { label: 'Promotions', icon: <LocalOfferIcon />, path: 'promotions' },
   { label: 'Pickup Ticket', icon: <ConfirmationNumberIcon />, path: 'pickup-ticket' },
   { label: 'Delivery', icon: <LocalShippingIcon />, path: 'delivery' },

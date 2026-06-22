@@ -105,6 +105,7 @@ const PICKUP_ADDRESS_ID = '7984';
 
 export interface CourierOrderInput {
   orderNo: string;
+  waybillNumber?: string;
   customerName: string;
   customerAddress: string;
   customerPhone: string;
@@ -125,6 +126,7 @@ export interface CourierOrderResult {
 export async function createCourierOrder(input: CourierOrderInput): Promise<CourierOrderResult> {
   const orderEntry: Record<string, unknown> = {
     order_no: input.orderNo,
+    waybill_number: input.waybillNumber,
     customer_name: input.customerName,
     customer_address: input.customerAddress,
     customer_phone: input.customerPhone,
@@ -155,6 +157,10 @@ export async function createCourierOrder(input: CourierOrderInput): Promise<Cour
   });
 
   const data = await res.json().catch(() => ({}));
+
+  // Always log the full response to console for debugging
+  console.log('[Courier API] status:', res.status, 'response:', JSON.stringify(data, null, 2));
+
   if (!res.ok) {
     const msg = (data as Record<string, unknown>)?.message;
     throw new Error(msg ? String(msg) : `Courier order creation failed (${res.status})`);

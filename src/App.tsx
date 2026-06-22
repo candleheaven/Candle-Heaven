@@ -27,6 +27,7 @@ import PromotionList from './pages/admin/PromotionList';
 import PromotionForm from './pages/admin/PromotionForm';
 import PickupTicket from './pages/admin/PickupTicket';
 import Purchases from './pages/admin/Purchases';
+import Settlements from './pages/admin/Settlements';
 
 function CustomerLayout() {
   return (
@@ -66,6 +67,7 @@ export default function App() {
                   <Route path="promotions/new" element={<PromotionForm />} />
                   <Route path="promotions/:id/edit" element={<PromotionForm />} />
                   <Route path="purchases" element={<Purchases />} />
+                  <Route path="settlements" element={<Settlements />} />
                   <Route path="pickup-ticket" element={<PickupTicket />} />
                   <Route path="delivery" element={<DeliverySettings />} />
                 </Route>
