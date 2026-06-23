@@ -562,6 +562,9 @@ export default function OrderList() {
                   <TableRow key={order.id} hover sx={{ cursor: 'pointer', '&:last-child td': { border: 0 } }} onClick={() => setDetailOrder(order)}>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 13 }}>{order.orderNumber}</Typography>
+                      {order.seqNumber != null && (
+                        <Typography variant="caption" color="text.secondary">#{order.seqNumber}</Typography>
+                      )}
                     </TableCell>
                     <TableCell><Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography></TableCell>
                     <TableCell>
@@ -598,7 +601,12 @@ export default function OrderList() {
         {detailOrder && (
           <>
             <DialogTitle sx={{ pb: 1 }}>
-              <Typography variant="h6" component="span" sx={{ fontWeight: 700, fontFamily: 'monospace', display: 'block' }}>{detailOrder.orderNumber}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="h6" component="span" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{detailOrder.orderNumber}</Typography>
+                {detailOrder.seqNumber != null && (
+                  <Typography variant="body2" component="span" color="text.secondary">#{detailOrder.seqNumber}</Typography>
+                )}
+              </Box>
               <Typography variant="body2" component="span" color="text.secondary" sx={{ display: 'block' }}>{formatDate(detailOrder.createdAt)}</Typography>
             </DialogTitle>
 

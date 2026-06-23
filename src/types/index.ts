@@ -90,6 +90,7 @@ export interface Settlement {
 export interface Order {
   id?: string;
   orderNumber?: string;
+  seqNumber?: number;
   customer: CustomerInfo;
   items: CartItem[];
   subtotal: number;

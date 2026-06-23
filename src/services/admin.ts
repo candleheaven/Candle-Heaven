@@ -2,6 +2,7 @@ import {
   collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc,
   query, orderBy, where, serverTimestamp, increment, deleteField,
 } from 'firebase/firestore';
+import { generateOrderNumber, generateOrderNumberMock } from './orderNumber';
 import { db } from './firebase';
 import type { Product, Order, OrderStatus, CartItem, Purchase, PurchaseItem, Supplier, Settlement, PaymentInfo, CourierAssignment } from '../types';
 import { MOCK_PRODUCTS } from './mockData';
@@ -273,32 +274,28 @@ export async function adminGetAllOrders(): Promise<AdminOrder[]> {
   });
 }
 
-function generateOrderNumber(): string {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `CH-${ts}-${rand}`;
-}
-
 export async function adminPlaceOrder(
   order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>,
   status: OrderStatus = 'confirmed'
 ): Promise<string> {
-  const orderNumber = generateOrderNumber();
-
   if (STOCK_ACTIVE.has(status)) {
     await adjustProductStock([...order.items, ...(order.packagingItems ?? [])], -1);
   }
 
   if (USE_MOCK) {
+    const { orderNumber } = generateOrderNumberMock();
     const existing = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]');
     const newOrder = { ...order, orderNumber, status, createdAt: new Date().toISOString() };
     localStorage.setItem(ORDERS_KEY, JSON.stringify([newOrder, ...existing]));
     return orderNumber;
   }
 
+  const { orderNumber, seqNumber } = await generateOrderNumber();
+
   await addDoc(collection(db, 'orders'), {
     ...order,
     orderNumber,
+    seqNumber,
     status,
     source: 'manual',
     createdAt: serverTimestamp(),

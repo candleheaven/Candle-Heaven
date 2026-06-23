@@ -52,5 +52,13 @@ service cloud.firestore {
     match /loyalty/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // ── Order sequence counters ───────────────────────────────────────────────
+    // Anyone can read; counter can only be incremented by exactly 1 per write.
+    match /counters/{counterId} {
+      allow read: if true;
+      allow create: if request.resource.data.count == 1;
+      allow update: if request.resource.data.count == resource.data.count + 1;
+    }
   }
 }
