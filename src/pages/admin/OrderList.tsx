@@ -19,6 +19,8 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import SendIcon from '@mui/icons-material/Send';
 import SaveIcon from '@mui/icons-material/Save';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUpdateOrderField, adminUpdateOrderItems, getOrderProfitBreakdown, adminRecordPayment, adminMarkOrderUnpaid, adminGetOpenCourierInvoices, adminAssignOrderToInvoice, adminUnassignOrderFromInvoice, type AdminOrder, type OrderProfitBreakdown } from '../../services/admin';
 import type { PaymentMethod, PaymentInfo, Settlement, FulfillmentType } from '../../types';
 import { trackShipment, createCourierOrder } from '../../services/courier';
@@ -26,6 +28,53 @@ import type { TrackingInfo, CourierOrderInput } from '../../services/courier';
 import type { OrderStatus, CartItem, Product } from '../../types';
 
 const NAVY = '#132040';
+
+function formatWhatsAppNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('94')) return digits;
+  if (digits.startsWith('0')) return '94' + digits.slice(1);
+  return '94' + digits;
+}
+
+function buildConfirmationMessage(order: AdminOrder): string {
+  const date = new Date(order.createdAt as string).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const items = order.items
+    .map(i => `• ${i.name}${i.unit ? ` ${i.unit}` : ''} × ${i.quantity} — LKR ${(i.price * i.quantity).toLocaleString()}`)
+    .join('\n');
+  const subtotal = (order.subtotal ?? order.items.reduce((s, i) => s + i.price * i.quantity, 0));
+  const deliveryLine = order.deliveryFee ? `\n*Delivery:* LKR ${order.deliveryFee.toLocaleString()}` : '';
+  const discountLine = order.promoDiscount ? `\n*Discount:* −LKR ${order.promoDiscount.toLocaleString()}` : '';
+
+  return (
+    `Hi ${order.customer.name}! 🕯️\n\n` +
+    `Thank you for your order from Candle Heaven!\n\n` +
+    `*Order No:* ${order.orderNumber}\n` +
+    `*Date:* ${date}\n\n` +
+    `*Items:*\n${items}\n\n` +
+    `*Subtotal:* LKR ${subtotal.toLocaleString()}${discountLine}${deliveryLine}\n` +
+    `*Total:* LKR ${order.total.toLocaleString()}\n\n` +
+    `We'll let you know once your order is on its way! 🚚`
+  );
+}
+
+function buildShippedMessage(order: AdminOrder): string {
+  return (
+    `Hi ${order.customer.name}! 📦\n\n` +
+    `Your Candle Heaven order is on its way!\n\n` +
+    `*Order No:* ${order.orderNumber}\n` +
+    `*Waybill No:* ${order.waybillNumber ?? 'N/A'}\n\n` +
+    `You can track your parcel here:\n` +
+    `https://www.royalexpress.lk/trackyourparcel.html\n\n` +
+    `Expected delivery in 1–3 business days. 🕯️`
+  );
+}
+
+function openWhatsApp(phone: string, message: string) {
+  const number = formatWhatsAppNumber(phone);
+  window.open(`https://wa.me/${number}?text=${encodeURIComponent(message)}`, '_blank');
+}
 
 const ALL_STATUSES: OrderStatus[] = ['pending', 'confirmed', 'shipped', 'delivered', 'returned', 'cancelled'];
 
@@ -1245,7 +1294,48 @@ export default function OrderList() {
               </Box>
             </DialogContent>
 
-            <DialogActions>
+            <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: 2, pb: 2 }}>
+              {detailOrder.status === 'confirmed' && (
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<WhatsAppIcon />}
+                    sx={{ color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#1ebe57', bgcolor: '#f0fff4' } }}
+                    onClick={() => openWhatsApp(detailOrder.customer.phone, buildConfirmationMessage(detailOrder))}
+                  >
+                    Send Confirmation
+                  </Button>
+                  <Tooltip title="Copy message">
+                    <IconButton
+                      size="small"
+                      onClick={() => { navigator.clipboard.writeText(buildConfirmationMessage(detailOrder)); setSuccessMsg('Confirmation message copied'); }}
+                    >
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+              {(detailOrder.status === 'shipped' || detailOrder.status === 'delivered') && (
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<WhatsAppIcon />}
+                    sx={{ color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#1ebe57', bgcolor: '#f0fff4' } }}
+                    onClick={() => openWhatsApp(detailOrder.customer.phone, buildShippedMessage(detailOrder))}
+                  >
+                    Send Shipping Info
+                  </Button>
+                  <Tooltip title="Copy message">
+                    <IconButton
+                      size="small"
+                      onClick={() => { navigator.clipboard.writeText(buildShippedMessage(detailOrder)); setSuccessMsg('Shipping message copied'); }}
+                    >
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+              <Box sx={{ flex: 1 }} />
               <Button onClick={() => setDetailOrder(null)}>Close</Button>
             </DialogActions>
           </>
