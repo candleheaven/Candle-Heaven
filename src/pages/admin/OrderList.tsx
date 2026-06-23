@@ -969,8 +969,24 @@ export default function OrderList() {
                       </Box>
                       {profitBreakdown.deliveryFee > 0 && (
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                          <Typography variant="body2" color="text.secondary">Delivery Fee</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Delivery Fee {profitBreakdown.actualShippingFee != null ? '(charged)' : ''}
+                          </Typography>
                           <Typography variant="body2">{formatCurrency(profitBreakdown.deliveryFee)}</Typography>
+                        </Box>
+                      )}
+                      {profitBreakdown.actualShippingFee != null && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                          <Typography variant="body2" color="text.secondary">Actual Shipping Cost</Typography>
+                          <Typography
+                            variant="body2"
+                            color={profitBreakdown.actualShippingFee > profitBreakdown.deliveryFee ? 'error.main' : profitBreakdown.actualShippingFee < profitBreakdown.deliveryFee ? 'success.main' : 'text.primary'}
+                          >
+                            {formatCurrency(profitBreakdown.actualShippingFee)}
+                            {profitBreakdown.actualShippingFee !== profitBreakdown.deliveryFee && (
+                              <> ({profitBreakdown.actualShippingFee > profitBreakdown.deliveryFee ? '+' : ''}{formatCurrency(profitBreakdown.actualShippingFee - profitBreakdown.deliveryFee)})</>
+                            )}
+                          </Typography>
                         </Box>
                       )}
                       {profitBreakdown.discount > 0 && (

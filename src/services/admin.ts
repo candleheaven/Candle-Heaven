@@ -300,6 +300,7 @@ export async function adminPlaceOrder(
     ...order,
     orderNumber,
     status,
+    source: 'manual',
     createdAt: serverTimestamp(),
   });
   return orderNumber;
@@ -426,7 +427,7 @@ export async function getAnalytics(): Promise<AnalyticsData> {
   const [orders, products] = await Promise.all([adminGetAllOrders(), adminGetAllProducts()]);
 
   const active = orders.filter(o => o.status !== 'cancelled');
-  const totalRevenue = active.reduce((sum, o) => sum + o.total, 0);
+  const totalRevenue = active.reduce((sum, o) => sum + o.total - (o.courierInvoice?.actualShippingFee ?? o.deliveryFee ?? 0), 0);
   const totalOrders = orders.length;
   const totalProducts = products.length;
   const lowStockCount = products.filter(p => p.stock < 20).length;
@@ -848,7 +849,7 @@ export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
   let totalCOGS = 0;
   let totalRevenue = 0;
   for (const order of active) {
-    totalRevenue += order.total;
+    totalRevenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
     for (const item of order.items)           totalCOGS += orderItemCOGS(item, productMap);
     for (const item of order.packagingItems ?? []) totalCOGS += orderItemCOGS(item, productMap);
   }
@@ -868,7 +869,7 @@ export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
     const day = (order.createdAt as string)?.slice(0, 10);
     if (!day || !dayMap.has(day)) continue;
     const cur = dayMap.get(day)!;
-    cur.revenue += order.total;
+    cur.revenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
     for (const item of order.items)               cur.cogs += orderItemCOGS(item, productMap);
     for (const item of order.packagingItems ?? []) cur.cogs += orderItemCOGS(item, productMap);
   }
@@ -1091,6 +1092,7 @@ export interface OrderProfitBreakdown {
   packagingBreakdown: { name: string; unit: string; quantity: number; cogs: number }[];
   subtotal: number;
   deliveryFee: number;
+  actualShippingFee?: number;
   discount: number;
   total: number;
   totalCOGS: number;
@@ -1136,7 +1138,7 @@ export async function getMonthlyStats(lookbackMonths = 12): Promise<MonthlyStats
     if (!month || !monthMap.has(month)) continue;
     const cur = monthMap.get(month)!;
     cur.orders++;
-    cur.revenue += order.total;
+    cur.revenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
     for (const item of order.items)               cur.cogs += orderItemCOGS(item, productMap);
     for (const item of order.packagingItems ?? []) cur.cogs += orderItemCOGS(item, productMap);
   }
@@ -1185,13 +1187,18 @@ export async function getOrderProfitBreakdown(order: AdminOrder): Promise<OrderP
   const totalCOGS = [...itemBreakdown.map(i => i.cogs), ...packagingBreakdown.map(i => i.cogs)].reduce((s, v) => s + v, 0);
   const subtotal = Math.round(order.subtotal ?? order.items.reduce((s, i) => s + i.price * i.quantity, 0));
   const deliveryFee = Math.round(order.deliveryFee ?? 0);
+  const actualShippingFee = order.courierInvoice?.actualShippingFee != null
+    ? Math.round(order.courierInvoice.actualShippingFee)
+    : undefined;
   const discount = Math.round(order.promoDiscount ?? 0);
-  const grossProfit = order.total - totalCOGS;
-  const profitMargin = order.total > 0 ? (grossProfit / order.total) * 100 : 0;
+  const effectiveShippingCost = actualShippingFee ?? deliveryFee;
+  const productRevenue = order.total - effectiveShippingCost;
+  const grossProfit = productRevenue - totalCOGS;
+  const profitMargin = productRevenue > 0 ? (grossProfit / productRevenue) * 100 : 0;
 
   return {
     itemBreakdown, packagingBreakdown,
-    subtotal, deliveryFee, discount,
+    subtotal, deliveryFee, actualShippingFee, discount,
     total: Math.round(order.total),
     totalCOGS,
     grossProfit: Math.round(grossProfit),

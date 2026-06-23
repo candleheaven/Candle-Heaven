@@ -25,8 +25,21 @@ export async function placeOrder(order: Omit<Order, 'id' | 'orderNumber' | 'crea
     ...order,
     orderNumber,
     status: 'pending',
+    source: 'web',
     createdAt: serverTimestamp(),
   });
+
+  fetch('/api/notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      orderNumber,
+      customerName: order.customer?.name,
+      total: order.total,
+      itemCount: order.items.length,
+    }),
+  }).catch(() => {});
+
   return orderNumber;
 }
 
