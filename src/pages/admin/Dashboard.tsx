@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, CircularProgress,
-  useTheme, Divider,
+  useTheme, Divider, Chip,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
@@ -16,7 +16,7 @@ import {
   BarChart, Bar, Line, ComposedChart,
 } from 'recharts';
 import InventoryIcon from '@mui/icons-material/Inventory2';
-import { getAnalytics, getProfitAnalytics, type AnalyticsData, type ProfitAnalytics, type StockValueEntry } from '../../services/admin';
+import { getAnalytics, getProfitAnalytics, getMonthlyStats, type AnalyticsData, type ProfitAnalytics, type StockValueEntry, type MonthlyStats } from '../../services/admin';
 
 const GOLD = '#C9A96E';
 const NAVY = '#132040';
@@ -85,13 +85,15 @@ function StatCard({
 export default function Dashboard() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [profitData, setProfitData] = useState<ProfitAnalytics | null>(null);
+  const [monthly, setMonthly] = useState<MonthlyStats[]>([]);
   const [loading, setLoading] = useState(true);
   const theme = useTheme();
 
   useEffect(() => {
-    Promise.all([getAnalytics(), getProfitAnalytics()]).then(([d, p]) => {
+    Promise.all([getAnalytics(), getProfitAnalytics(), getMonthlyStats(6)]).then(([d, p, m]) => {
       setData(d);
       setProfitData(p);
+      setMonthly(m);
       setLoading(false);
     });
   }, []);
@@ -305,7 +307,7 @@ export default function Dashboard() {
             Profitability
           </Typography>
 
-          {/* Profit KPI cards */}
+          {/* All-time KPI cards */}
           <Grid container spacing={2} sx={{ mb: 2 }}>
             <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
               <StatCard
@@ -344,6 +346,37 @@ export default function Dashboard() {
               />
             </Grid>
           </Grid>
+
+          {/* This month KPI cards */}
+          {(() => {
+            const thisMonth = new Date().toISOString().slice(0, 7);
+            const m = monthly.find(x => x.month === thisMonth);
+            if (!m) return null;
+            return (
+              <>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    {m.label}
+                  </Typography>
+                  <Chip label="This Month" size="small" color="primary" variant="outlined" sx={{ fontSize: 11 }} />
+                </Box>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                    <StatCard label="Purchase Spend" value={fmt(m.purchaseCost)} icon={<ReceiptLongIcon />} color="#607D8B" note={`${m.orders} orders`} />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                    <StatCard label="COGS" value={fmt(m.cogs)} icon={<ShoppingCartIcon />} color="#FF5722" note="Cost of goods sold" />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                    <StatCard label="Gross Profit" value={fmt(m.profit)} icon={<AccountBalanceWalletIcon />} color={m.profit >= 0 ? '#4CAF50' : '#F44336'} note={`Revenue ${fmt(m.revenue)}`} />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                    <StatCard label="Profit Margin" value={`${m.profitMargin.toFixed(1)}%`} icon={<ShowChartIcon />} color={m.profitMargin >= 30 ? '#4CAF50' : m.profitMargin >= 15 ? '#FF9800' : '#F44336'} note={m.profitMargin >= 30 ? 'Healthy margin' : m.profitMargin >= 15 ? 'Moderate margin' : 'Low margin'} />
+                  </Grid>
+                </Grid>
+              </>
+            );
+          })()}
 
           {/* Revenue vs COGS vs Profit chart + Profit by category */}
           <Grid container spacing={2} sx={{ mb: 2 }}>

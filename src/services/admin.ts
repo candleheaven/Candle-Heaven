@@ -589,7 +589,7 @@ export async function getProductAnalytics(lookbackMonths = 6): Promise<ProductMo
   const months: string[] = [];
   const monthLabels: string[] = [];
   for (let i = lookbackMonths - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i, 1));
     months.push(d.toISOString().slice(0, 7));
     monthLabels.push(d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
   }
@@ -1123,7 +1123,7 @@ export async function getMonthlyStats(lookbackMonths = 12): Promise<MonthlyStats
   const now = new Date();
   const months: { key: string; label: string }[] = [];
   for (let i = lookbackMonths - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i, 1));
     months.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) });
   }
 
