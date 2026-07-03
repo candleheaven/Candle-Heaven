@@ -108,7 +108,7 @@ export interface Order {
   courierTicketId?: string;
   packagingItems?: CartItem[];  // Internal packing materials — not shown to customer
   damagedItems?: { cartKey: string; damagedQty: number }[];
-  paymentStatus?: 'unpaid' | 'paid';
+  paymentStatus?: 'unpaid' | 'paid' | 'partially_paid';
   paymentInfo?: PaymentInfo;
   courierInvoice?: CourierAssignment;
   fulfillmentType?: FulfillmentType;

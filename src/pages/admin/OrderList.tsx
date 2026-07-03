@@ -21,7 +21,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUpdateOrderField, adminUpdateOrderItems, getOrderProfitBreakdown, adminRecordPayment, adminMarkOrderUnpaid, adminGetOpenCourierInvoices, adminAssignOrderToInvoice, adminUnassignOrderFromInvoice, type AdminOrder, type OrderProfitBreakdown } from '../../services/admin';
+import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUpdateOrderField, adminUpdateOrderItems, getOrderProfitBreakdown, adminRecordPayment, adminMarkOrderUnpaid, adminSetPaymentStatus, adminGetOpenCourierInvoices, adminAssignOrderToInvoice, adminUnassignOrderFromInvoice, type AdminOrder, type OrderProfitBreakdown } from '../../services/admin';
 import type { PaymentMethod, PaymentInfo, Settlement, FulfillmentType } from '../../types';
 import { trackShipment, createCourierOrder } from '../../services/courier';
 import type { TrackingInfo, CourierOrderInput } from '../../services/courier';
@@ -179,7 +179,7 @@ export default function OrderList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'partially_paid' | 'unpaid'>('all');
   const [detailOrder, setDetailOrder] = useState<AdminOrder | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState(
@@ -530,7 +530,9 @@ export default function OrderList() {
   const filtered = orders.filter(o => {
     const matchStatus = statusFilter === 'all' || o.status === statusFilter;
     const matchPayment = paymentFilter === 'all' ||
-      (paymentFilter === 'paid' ? o.paymentStatus === 'paid' : o.paymentStatus !== 'paid');
+      (paymentFilter === 'paid' ? o.paymentStatus === 'paid' :
+       paymentFilter === 'partially_paid' ? o.paymentStatus === 'partially_paid' :
+       paymentFilter === 'unpaid' ? (!o.paymentStatus || o.paymentStatus === 'unpaid') : true);
     const q = search.toLowerCase();
     const matchSearch = !q ||
       o.orderNumber.toLowerCase().includes(q) ||
@@ -569,8 +571,9 @@ export default function OrderList() {
 
       {/* Payment filter chips */}
       <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-        <Chip label="Any payment" size="small" onClick={() => setPaymentFilter('all')} variant={paymentFilter === 'all' ? 'filled' : 'outlined'} color={paymentFilter === 'all' ? 'default' : 'default'} sx={{ fontWeight: paymentFilter === 'all' ? 700 : 400 }} />
+        <Chip label="Any payment" size="small" onClick={() => setPaymentFilter('all')} variant={paymentFilter === 'all' ? 'filled' : 'outlined'} sx={{ fontWeight: paymentFilter === 'all' ? 700 : 400 }} />
         <Chip label="Paid" size="small" onClick={() => setPaymentFilter('paid')} variant={paymentFilter === 'paid' ? 'filled' : 'outlined'} color={paymentFilter === 'paid' ? 'success' : 'default'} sx={{ fontWeight: paymentFilter === 'paid' ? 700 : 400 }} />
+        <Chip label="Partially Paid" size="small" onClick={() => setPaymentFilter('partially_paid')} variant={paymentFilter === 'partially_paid' ? 'filled' : 'outlined'} color={paymentFilter === 'partially_paid' ? 'warning' : 'default'} sx={{ fontWeight: paymentFilter === 'partially_paid' ? 700 : 400 }} />
         <Chip label="Unpaid" size="small" onClick={() => setPaymentFilter('unpaid')} variant={paymentFilter === 'unpaid' ? 'filled' : 'outlined'} color={paymentFilter === 'unpaid' ? 'error' : 'default'} sx={{ fontWeight: paymentFilter === 'unpaid' ? 700 : 400 }} />
       </Box>
 
@@ -1075,12 +1078,23 @@ export default function OrderList() {
               {/* Payment */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Payment</Typography>
-                {detailOrder.paymentStatus === 'paid'
-                  ? <Chip label="PAID" color="success" size="small" sx={{ fontWeight: 700 }} />
-                  : <Chip label="UNPAID" color="error" size="small" sx={{ fontWeight: 700 }} />}
+                <TextField
+                  select size="small" value={detailOrder.paymentStatus ?? 'unpaid'}
+                  onChange={async e => {
+                    const status = e.target.value as 'unpaid' | 'paid' | 'partially_paid';
+                    await adminSetPaymentStatus(detailOrder.id!, status);
+                    setDetailOrder(o => o ? { ...o, paymentStatus: status, ...(status === 'unpaid' ? { paymentInfo: undefined } : {}) } : o);
+                    setOrders(os => os.map(o => o.id === detailOrder.id ? { ...o, paymentStatus: status, ...(status === 'unpaid' ? { paymentInfo: undefined } : {}) } : o));
+                  }}
+                  sx={{ minWidth: 150 }}
+                >
+                  <MenuItem value="unpaid">Unpaid</MenuItem>
+                  <MenuItem value="partially_paid">Partially Paid</MenuItem>
+                  <MenuItem value="paid">Paid</MenuItem>
+                </TextField>
               </Box>
 
-              {detailOrder.paymentStatus === 'paid' && detailOrder.paymentInfo ? (
+              {(detailOrder.paymentStatus === 'paid' || detailOrder.paymentStatus === 'partially_paid') && detailOrder.paymentInfo ? (
                 <Box sx={{ bgcolor: '#F0FDF4', border: '1px solid', borderColor: 'success.light', borderRadius: 1.5, p: 1.5, mb: 1.5 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
@@ -1096,12 +1110,12 @@ export default function OrderList() {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(detailOrder.paymentInfo.amount)}</Typography>
                       <Button size="small" sx={{ fontSize: 11, color: 'text.secondary', textTransform: 'none', minWidth: 0 }} onClick={handleMarkUnpaid}>
-                        Undo
+                        Clear
                       </Button>
                     </Box>
                   </Box>
                 </Box>
-              ) : !paymentFormOpen ? (
+              ) : (detailOrder.paymentStatus === 'paid' || detailOrder.paymentStatus === 'partially_paid') && !paymentFormOpen ? (
                 <Button size="small" variant="outlined" color="success" onClick={() => setPaymentFormOpen(true)} sx={{ mb: 1.5 }}>
                   Record Payment
                 </Button>

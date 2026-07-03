@@ -1242,6 +1242,22 @@ export async function adminMarkOrderUnpaid(orderId: string): Promise<void> {
   await updateDoc(doc(db, 'orders', orderId), { paymentStatus: deleteField(), paymentInfo: deleteField() } as any);
 }
 
+export async function adminSetPaymentStatus(orderId: string, status: 'unpaid' | 'paid' | 'partially_paid'): Promise<void> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(
+      orders.map(o => o.id === orderId ? { ...o, paymentStatus: status } : o)
+    ));
+    return;
+  }
+  if (status === 'unpaid') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateDoc(doc(db, 'orders', orderId), { paymentStatus: deleteField(), paymentInfo: deleteField() } as any);
+  } else {
+    await updateDoc(doc(db, 'orders', orderId), { paymentStatus: status });
+  }
+}
+
 /** Create a new courier invoice settlement (without linking orders — orders assigned separately). */
 export async function adminCreateCourierInvoice(
   reference: string,
