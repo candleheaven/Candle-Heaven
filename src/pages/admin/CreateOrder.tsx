@@ -691,9 +691,10 @@ export default function CreateOrder() {
                   </Box>
                 ) : (
                   <>
+                    <Box sx={{ overflowX: 'auto' }}>
                     <Table size="small">
                       <TableHead>
-                        <TableRow sx={{ '& th': { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
+                        <TableRow sx={{ '& th': { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary', whiteSpace: 'nowrap' } }}>
                           <TableCell>Product</TableCell>
                           <TableCell align="center">Qty</TableCell>
                           <TableCell align="right">Unit Price</TableCell>
@@ -767,6 +768,7 @@ export default function CreateOrder() {
                         })}
                       </TableBody>
                     </Table>
+                    </Box>
 
                     {/* Packaging section */}
                     <Box sx={{ mt: 3 }}>
@@ -922,10 +924,10 @@ export default function CreateOrder() {
           </Grid>
         </Grid>
 
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, mt: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 1.5, mt: 3 }}>
           <Button onClick={() => navigate('/admin/orders')} disabled={submitting}>Cancel</Button>
           <Button type="submit" variant="contained" disabled={submitting || orderItems.length === 0}
-            sx={{ bgcolor: GOLD, color: NAVY, fontWeight: 700, minWidth: 160, '&:hover': { bgcolor: '#A8864E' } }}>
+            sx={{ bgcolor: GOLD, color: NAVY, fontWeight: 700, minWidth: 140, '&:hover': { bgcolor: '#A8864E' } }}>
             {submitting ? <CircularProgress size={20} color="inherit" /> : 'Create Order'}
           </Button>
         </Box>

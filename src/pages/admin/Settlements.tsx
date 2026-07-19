@@ -4,7 +4,7 @@ import {
   TableContainer, Typography, Button, Chip, CircularProgress,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Snackbar, Alert, Collapse, IconButton, Divider, Tooltip,
-  Tabs, Tab,
+  Tabs, Tab, useMediaQuery, useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -216,7 +216,7 @@ function CourierInvoiceRow({
 
                   {/* Balance summary */}
                   <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#F0F4FF', borderRadius: 1.5, border: '1px solid', borderColor: 'primary.light' }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.5 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 1.5 }}>
                       <Box>
                         <Typography variant="caption" color="text.secondary">Total COD</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(totalCOD)}</Typography>
@@ -324,6 +324,8 @@ function CashBankRow({ settlement, allOrders }: { settlement: Settlement; allOrd
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Settlements() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [cashBankOrders, setCashBankOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -544,7 +546,7 @@ export default function Settlements() {
       </Card>
 
       {/* New courier invoice dialog */}
-      <Dialog open={invoiceOpen} onClose={() => !savingInvoice && setInvoiceOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={invoiceOpen} onClose={() => !savingInvoice && setInvoiceOpen(false)} maxWidth="xs" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
           New Courier Invoice
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.25 }}>
@@ -554,13 +556,13 @@ export default function Settlements() {
         <DialogContent>
           {invoiceError && <Alert severity="error" sx={{ mb: 2 }}>{invoiceError}</Alert>}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
               <TextField label="Invoice / Reference #" value={invoiceForm.reference}
                 onChange={e => setInvoiceForm(f => ({ ...f, reference: e.target.value }))}
-                size="small" fullWidth required placeholder="e.g. CFX-25-11-172805" />
+                size="small" sx={{ flex: 1, minWidth: 160 }} required placeholder="e.g. CFX-25-11-172805" />
               <TextField label="Date" type="date" value={invoiceForm.date}
                 onChange={e => setInvoiceForm(f => ({ ...f, date: e.target.value }))}
-                size="small" sx={{ width: 160 }} />
+                size="small" sx={{ flex: 1, minWidth: 140 }} />
             </Box>
             <TextField label="Received Amount (LKR)" type="number" value={invoiceForm.receivedAmount}
               onChange={e => setInvoiceForm(f => ({ ...f, receivedAmount: e.target.value }))}

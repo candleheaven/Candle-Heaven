@@ -348,6 +348,7 @@ export default function ProductForm() {
                     </Box>
 
                     {form.priceTiers.length > 0 && (
+                      <Box sx={{ overflowX: 'auto' }}>
                       <Table size="small" sx={{ mb: 1.5 }}>
                         <TableHead>
                           <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
@@ -421,6 +422,7 @@ export default function ProductForm() {
                           ))}
                         </TableBody>
                       </Table>
+                      </Box>
                     )}
 
                     <Button size="small" startIcon={<AddIcon />} onClick={addTier} variant="outlined" sx={{ mb: 1 }}>

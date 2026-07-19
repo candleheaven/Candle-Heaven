@@ -5,7 +5,7 @@ import {
   TableContainer, Typography, Chip, TextField, CircularProgress,
   MenuItem, Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Divider, InputAdornment, Stack, Alert, Snackbar,
-  Tooltip, Autocomplete, IconButton, Collapse,
+  Tooltip, Autocomplete, IconButton, Collapse, useMediaQuery, useTheme,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -192,6 +192,8 @@ function buildDescription(order: AdminOrder): string {
 export default function OrderList() {
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -611,7 +613,7 @@ export default function OrderList() {
       </Box>
 
       {/* Payment filter chips */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
         <Chip label="Any payment" size="small" onClick={() => setPaymentFilter('all')} variant={paymentFilter === 'all' ? 'filled' : 'outlined'} sx={{ fontWeight: paymentFilter === 'all' ? 700 : 400 }} />
         <Chip label="Paid" size="small" onClick={() => setPaymentFilter('paid')} variant={paymentFilter === 'paid' ? 'filled' : 'outlined'} color={paymentFilter === 'paid' ? 'success' : 'default'} sx={{ fontWeight: paymentFilter === 'paid' ? 700 : 400 }} />
         <Chip label="Partially Paid" size="small" onClick={() => setPaymentFilter('partially_paid')} variant={paymentFilter === 'partially_paid' ? 'filled' : 'outlined'} color={paymentFilter === 'partially_paid' ? 'warning' : 'default'} sx={{ fontWeight: paymentFilter === 'partially_paid' ? 700 : 400 }} />
@@ -625,26 +627,27 @@ export default function OrderList() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             size="small"
-            sx={{ width: 340 }}
+            fullWidth
+            sx={{ maxWidth: { sm: 380 } }}
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
           />
         </Box>
 
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
           ) : (
             <Table size="small">
               <TableHead>
-                <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: '#FAFAFA', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
+                <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: '#FAFAFA', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary', whiteSpace: 'nowrap' } }}>
                   <TableCell>Order #</TableCell>
-                  <TableCell>Date</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Date</TableCell>
                   <TableCell>Customer</TableCell>
-                  <TableCell align="center">Items</TableCell>
+                  <TableCell align="center" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Items</TableCell>
                   <TableCell align="right">Total</TableCell>
-                  <TableCell align="center">Waybill</TableCell>
+                  <TableCell align="center" sx={{ display: { xs: 'none', md: 'table-cell' } }}>Waybill</TableCell>
                   <TableCell align="center">Status</TableCell>
-                  <TableCell align="center">Update Status</TableCell>
+                  <TableCell align="center" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Update Status</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -659,14 +662,14 @@ export default function OrderList() {
                         <Typography variant="caption" color="text.secondary">#{order.seqNumber}</Typography>
                       )}
                     </TableCell>
-                    <TableCell><Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Typography variant="body2" color="text.secondary">{formatDate(order.createdAt)}</Typography></TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{order.customer.name}</Typography>
                       <Typography variant="caption" color="text.secondary">{order.customer.city}</Typography>
                     </TableCell>
-                    <TableCell align="center"><Typography variant="body2">{order.items.length}</Typography></TableCell>
+                    <TableCell align="center" sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Typography variant="body2">{order.items.length}</Typography></TableCell>
                     <TableCell align="right"><Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(order.total)}</Typography></TableCell>
-                    <TableCell align="center">
+                    <TableCell align="center" sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                       {order.waybillNumber ? (
                         <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: NAVY }}>{order.waybillNumber}</Typography>
                       ) : (
@@ -676,7 +679,7 @@ export default function OrderList() {
                     <TableCell align="center">
                       <Chip label={STATUS_CONFIG[order.status]?.label ?? order.status} size="small" color={STATUS_CONFIG[order.status]?.color ?? 'default'} sx={{ textTransform: 'capitalize', fontWeight: 600, fontSize: 11 }} />
                     </TableCell>
-                    <TableCell align="center" onClick={e => e.stopPropagation()}>
+                    <TableCell align="center" sx={{ display: { xs: 'none', sm: 'table-cell' } }} onClick={e => e.stopPropagation()}>
                       <TextField select value={order.status} onChange={e => handleStatusChange(order, e.target.value as OrderStatus)} size="small" disabled={updatingStatus === order.id} sx={{ minWidth: 130 }}>
                         {ALL_STATUSES.map(s => (<MenuItem key={s} value={s} sx={{ textTransform: 'capitalize' }}>{STATUS_CONFIG[s].label}</MenuItem>))}
                       </TextField>
@@ -690,7 +693,7 @@ export default function OrderList() {
       </Card>
 
       {/* ── Order Detail Dialog ─────────────────────────────────────────────── */}
-      <Dialog open={Boolean(detailOrder)} onClose={() => { setDetailOrder(null); setEditingItems(false); setEditItems([]); setEditPackagingItems([]); setProfitBreakdown(null); setProfitVisible(false); setPaymentFormOpen(false); }} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={Boolean(detailOrder)} onClose={() => { setDetailOrder(null); setEditingItems(false); setEditItems([]); setEditPackagingItems([]); setProfitBreakdown(null); setProfitVisible(false); setPaymentFormOpen(false); }} maxWidth="sm" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         {detailOrder && (
           <>
             <DialogTitle sx={{ pb: 1 }}>
@@ -1449,7 +1452,7 @@ export default function OrderList() {
       </Dialog>
 
       {/* ── Assign Courier Invoice Dialog ────────────────────────────────────── */}
-      <Dialog open={invoiceAssignOpen} onClose={() => !savingAssign && setInvoiceAssignOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={invoiceAssignOpen} onClose={() => !savingAssign && setInvoiceAssignOpen(false)} maxWidth="xs" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
           Assign to Courier Invoice
           {detailOrder && (
@@ -1498,7 +1501,7 @@ export default function OrderList() {
       </Dialog>
 
       {/* ── Return / Damage Dialog ──────────────────────────────────────────── */}
-      <Dialog open={Boolean(returnTarget)} onClose={() => !processingReturn && setReturnTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={Boolean(returnTarget)} onClose={() => !processingReturn && setReturnTarget(null)} maxWidth="sm" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
           Process Return
           {returnTarget && (
@@ -1595,7 +1598,7 @@ export default function OrderList() {
       </Dialog>
 
       {/* ── Courier Order Dialog ─────────────────────────────────────────────── */}
-      <Dialog open={courierOrderOpen} onClose={() => setCourierOrderOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={courierOrderOpen} onClose={() => setCourierOrderOpen(false)} maxWidth="sm" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
           Create Courier Order
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.25 }}>
@@ -1609,18 +1612,18 @@ export default function OrderList() {
             <Stack spacing={2} sx={{ mt: 1 }}>
               {courierOrderError && <Alert severity="error">{courierOrderError}</Alert>}
 
-              <Box sx={{ display: 'flex', gap: 2 }}>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <TextField
                   label="Customer Name"
                   size="small"
-                  fullWidth
+                  sx={{ flex: 1, minWidth: 160 }}
                   value={courierOrderForm.customerName}
                   onChange={e => setCourierOrderForm(f => ({ ...f, customerName: e.target.value }))}
                 />
                 <TextField
                   label="Phone"
                   size="small"
-                  sx={{ width: 160, flexShrink: 0 }}
+                  sx={{ flex: 1, minWidth: 140 }}
                   value={courierOrderForm.customerPhone}
                   onChange={e => setCourierOrderForm(f => ({ ...f, customerPhone: e.target.value }))}
                 />
@@ -1642,29 +1645,29 @@ export default function OrderList() {
                 onChange={e => setCourierOrderForm(f => ({ ...f, customerAddress: e.target.value }))}
               />
 
-              <Box sx={{ display: 'flex', gap: 2 }}>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <TextField
                   label="City"
                   size="small"
-                  fullWidth
+                  sx={{ flex: 1, minWidth: 130 }}
                   value={courierOrderForm.destinationCityName}
                   onChange={e => setCourierOrderForm(f => ({ ...f, destinationCityName: e.target.value }))}
                 />
                 <TextField
                   label="District / State"
                   size="small"
-                  fullWidth
+                  sx={{ flex: 1, minWidth: 130 }}
                   value={courierOrderForm.destinationStateName}
                   onChange={e => setCourierOrderForm(f => ({ ...f, destinationStateName: e.target.value }))}
                 />
               </Box>
 
-              <Box sx={{ display: 'flex', gap: 2 }}>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <TextField
                   label="COD Amount (LKR)"
                   size="small"
                   type="number"
-                  fullWidth
+                  sx={{ flex: 1, minWidth: 140 }}
                   value={courierOrderForm.cod}
                   onChange={e => setCourierOrderForm(f => ({ ...f, cod: parseFloat(e.target.value) || 0 }))}
                 />
@@ -1672,7 +1675,7 @@ export default function OrderList() {
                   label="Weight (kg)"
                   size="small"
                   type="number"
-                  sx={{ width: 130, flexShrink: 0 }}
+                  sx={{ flex: 1, minWidth: 120 }}
                   value={courierOrderForm.weight}
                   onChange={e => setCourierOrderForm(f => ({ ...f, weight: parseFloat(e.target.value) || 0 }))}
                   slotProps={{ htmlInput: { step: 0.1, min: 0.1 } }}

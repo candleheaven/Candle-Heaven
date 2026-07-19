@@ -81,7 +81,7 @@ export default function PromotionList() {
           <Button variant="outlined" onClick={() => navigate('/admin/promotions/new')}>Create your first promotion</Button>
         </Paper>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, overflowX: 'auto' }}>
           <Table>
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.50' }}>

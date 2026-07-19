@@ -4,7 +4,7 @@ import {
   TableContainer, Typography, Button, CircularProgress, Dialog,
   DialogTitle, DialogContent, DialogActions, TextField, Divider,
   Stack, Alert, Snackbar, Chip, Autocomplete, InputAdornment,
-  IconButton, Collapse, Tooltip, createFilterOptions,
+  IconButton, Collapse, Tooltip, createFilterOptions, useMediaQuery, useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -246,6 +246,8 @@ function SuppliersDialog({ open, onClose, onChanged }: { open: boolean; onClose:
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Purchases() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -409,7 +411,7 @@ export default function Purchases() {
       </Snackbar>
 
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
           ) : (
@@ -445,7 +447,7 @@ export default function Purchases() {
       />
 
       {/* ── Purchase form dialog ──────────────────────────────────────────────── */}
-      <Dialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} maxWidth="md" fullWidth fullScreen={isMobile} slotProps={{ paper: { sx: { borderRadius: isMobile ? 0 : 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
           {editingPurchaseId ? 'Edit Purchase' : 'Record Purchase'}
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.25 }}>

@@ -152,7 +152,8 @@ export default function ProductList() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             size="small"
-            sx={{ width: 280 }}
+            fullWidth
+            sx={{ maxWidth: { sm: 320 } }}
             slotProps={{
               input: {
                 startAdornment: (
@@ -165,7 +166,7 @@ export default function ProductList() {
           />
         </Box>
 
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
               <CircularProgress />
