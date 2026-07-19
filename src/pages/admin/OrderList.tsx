@@ -25,7 +25,24 @@ import { adminGetAllOrders, adminGetAllProducts, adminUpdateOrderStatus, adminUp
 import type { PaymentMethod, PaymentInfo, Settlement, FulfillmentType } from '../../types';
 import { trackShipment, createCourierOrder } from '../../services/courier';
 import type { TrackingInfo, CourierOrderInput } from '../../services/courier';
-import type { OrderStatus, CartItem, Product } from '../../types';
+import type { OrderStatus, CartItem, Product, PriceTier } from '../../types';
+
+// ── Tier helpers (mirrored from CreateOrder) ─────────────────────────────────
+function toBase(qty: number, unit: string): number {
+  if (unit === 'kg' || unit === 'L') return Math.round(qty * 1000);
+  return Math.round(qty);
+}
+function fromBase(qty: number, unit: string): number {
+  if (unit === 'kg' || unit === 'L') return qty / 1000;
+  return qty;
+}
+interface BestTierOption { tier: PriceTier; tierBase: number; units: number; total: number; }
+function getBestTierOption(baseQty: number, tiers: PriceTier[]): BestTierOption | null {
+  let best: PriceTier | null = null; let bestBase = -1;
+  for (const t of tiers) { const tb = toBase(t.qty, t.inputUnit); if (baseQty >= tb && tb > bestBase) { best = t; bestBase = tb; } }
+  if (!best) return null;
+  return { tier: best, tierBase: bestBase, units: baseQty / bestBase, total: (baseQty / bestBase) * best.price };
+}
 
 const NAVY = '#132040';
 
@@ -207,7 +224,8 @@ export default function OrderList() {
   const [editProducts, setEditProducts] = useState<Product[]>([]);
   const [editPkgProducts, setEditPkgProducts] = useState<Product[]>([]);
   const [addItemProduct, setAddItemProduct] = useState<Product | null>(null);
-  const [addItemQty, setAddItemQty] = useState(1);
+  const [addItemInputValue, setAddItemInputValue] = useState('');
+  const [addItemSimpleQty, setAddItemSimpleQty] = useState(1);
   const [addPkgProduct, setAddPkgProduct] = useState<Product | null>(null);
   const [addPkgQty, setAddPkgQty] = useState(1);
 
@@ -448,7 +466,7 @@ export default function OrderList() {
     if (!detailOrder) return;
     setEditItems([...detailOrder.items]);
     setEditPackagingItems([...(detailOrder.packagingItems ?? [])]);
-    setAddItemProduct(null); setAddItemQty(1);
+    setAddItemProduct(null); setAddItemInputValue(''); setAddItemSimpleQty(1);
     setAddPkgProduct(null); setAddPkgQty(1);
     if (editProducts.length === 0) {
       const all = await adminGetAllProducts();
@@ -501,16 +519,39 @@ export default function OrderList() {
 
   function addItemToEdit() {
     if (!addItemProduct) return;
-    setEditItems(items => {
-      const existing = items.find(i => i.cartKey === addItemProduct.id);
-      if (existing) return items.map(i => i.cartKey === addItemProduct.id ? { ...i, quantity: i.quantity + addItemQty } : i);
-      return [...items, {
-        productId: addItemProduct.id, cartKey: addItemProduct.id,
-        name: addItemProduct.name, price: addItemProduct.price,
-        quantity: addItemQty, unit: addItemProduct.unit, image: addItemProduct.images[0],
-      }];
-    });
-    setAddItemProduct(null); setAddItemQty(1);
+    const tiers = addItemProduct.priceTiers ?? [];
+    const hasTiers = tiers.length > 0;
+    if (hasTiers) {
+      const bulkTier = tiers.find(t => t.isBulk);
+      const displayUnit = bulkTier?.inputUnit ?? tiers[0]?.inputUnit ?? addItemProduct.unit;
+      const inputNum = parseFloat(addItemInputValue);
+      if (isNaN(inputNum) || inputNum <= 0) return;
+      const baseQty = toBase(inputNum, displayUnit);
+      const best = getBestTierOption(baseQty, tiers);
+      if (!best) return;
+      const cartKey = `${addItemProduct.id}-${best.tier.label}`;
+      setEditItems(items => {
+        const existing = items.find(i => i.cartKey === cartKey);
+        if (existing) return items.map(i => i.cartKey === cartKey ? { ...i, quantity: i.quantity + best.units } : i);
+        return [...items, {
+          productId: addItemProduct.id, cartKey,
+          name: addItemProduct.name, price: best.tier.price,
+          quantity: best.units, unit: best.tier.label,
+          image: addItemProduct.images?.[0], tierBase: best.tierBase,
+        }];
+      });
+    } else {
+      setEditItems(items => {
+        const existing = items.find(i => i.cartKey === addItemProduct.id);
+        if (existing) return items.map(i => i.cartKey === addItemProduct.id ? { ...i, quantity: i.quantity + addItemSimpleQty } : i);
+        return [...items, {
+          productId: addItemProduct.id, cartKey: addItemProduct.id,
+          name: addItemProduct.name, price: addItemProduct.price,
+          quantity: addItemSimpleQty, unit: addItemProduct.unit, image: addItemProduct.images?.[0],
+        }];
+      });
+    }
+    setAddItemProduct(null); setAddItemInputValue(''); setAddItemSimpleQty(1);
   }
 
   function addPkgToEdit() {
@@ -799,29 +840,80 @@ export default function OrderList() {
                       </TableRow>
                     </TableBody>
                   </Table>
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1.5, alignItems: 'center' }}>
+                  <Box sx={{ mt: 1.5 }}>
                     <Autocomplete
                       options={editProducts}
-                      getOptionLabel={p => `${p.name} (${p.unit})`}
+                      getOptionLabel={p => p.name}
                       value={addItemProduct}
-                      onChange={(_, v) => setAddItemProduct(v)}
+                      onChange={(_, v) => { setAddItemProduct(v); setAddItemInputValue(''); setAddItemSimpleQty(1); }}
                       renderInput={params => <TextField {...params} label="Add product" size="small" />}
-                      sx={{ flex: 1 }}
-                      size="small"
                       isOptionEqualToValue={(o, v) => o.id === v.id}
-                    />
-                    <TextField
-                      label="Qty"
                       size="small"
-                      type="number"
-                      value={addItemQty}
-                      onChange={e => setAddItemQty(Math.max(1, parseInt(e.target.value) || 1))}
-                      sx={{ width: 72 }}
-                      slotProps={{ htmlInput: { min: 1 } }}
                     />
-                    <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={addItemToEdit} disabled={!addItemProduct}>
-                      Add
-                    </Button>
+                    {addItemProduct && (() => {
+                      const tiers = addItemProduct.priceTiers ?? [];
+                      const hasTiers = tiers.length > 0;
+                      const bulkTier = tiers.find(t => t.isBulk);
+                      const displayUnit = bulkTier?.inputUnit ?? tiers[0]?.inputUnit ?? addItemProduct.unit;
+                      const fixedTiers = tiers.filter(t => !t.isBulk);
+                      const minBase = fixedTiers.length > 0 ? toBase(fixedTiers[0].qty, fixedTiers[0].inputUnit) : 1;
+                      const minDisplay = parseFloat(fromBase(minBase, displayUnit).toFixed(6));
+                      const inputNum = parseFloat(addItemInputValue);
+                      const baseQty = hasTiers && !isNaN(inputNum) && inputNum > 0 ? toBase(inputNum, displayUnit) : 0;
+                      const best = hasTiers && baseQty > 0 ? getBestTierOption(baseQty, tiers) : null;
+                      const isBelowMin = hasTiers && addItemInputValue !== '' && !isNaN(inputNum) && inputNum > 0 && baseQty < minBase;
+                      const canAdd = hasTiers ? (best !== null && !isBelowMin) : addItemSimpleQty >= 1;
+                      return (
+                        <Box sx={{ mt: 1, p: 1.5, bgcolor: '#F8F9FA', borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                          {hasTiers ? (
+                            <>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1 }}>
+                                {tiers.map((t, i) => {
+                                  const tb = toBase(t.qty, t.inputUnit);
+                                  const inDisplay = parseFloat(fromBase(tb, displayUnit).toFixed(6));
+                                  return (
+                                    <Box key={i} onClick={() => setAddItemInputValue(inDisplay.toString())}
+                                      sx={{ px: 1.25, py: 0.5, borderRadius: 1.5, cursor: 'pointer', border: '1.5px solid', borderColor: 'divider', bgcolor: 'white', '&:hover': { borderColor: NAVY } }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.3 }}>{t.label}</Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {t.isBulk ? `LKR ${t.price.toLocaleString()}/${t.inputUnit}` : `LKR ${t.price.toLocaleString()}`}
+                                      </Typography>
+                                    </Box>
+                                  );
+                                })}
+                              </Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TextField label="Amount" type="number" size="small" value={addItemInputValue}
+                                  onChange={e => setAddItemInputValue(e.target.value)}
+                                  placeholder={`e.g. ${minDisplay}`} error={isBelowMin}
+                                  slotProps={{ htmlInput: { min: minDisplay, step: minDisplay } }}
+                                  sx={{ width: 110 }} />
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>{displayUnit}</Typography>
+                              </Box>
+                              {isBelowMin && <Typography variant="caption" color="error">Min: {minDisplay} {displayUnit}</Typography>}
+                              {best && (
+                                <Typography variant="body2" sx={{ mt: 0.75, fontWeight: 600, color: NAVY }}>
+                                  {parseFloat(best.units.toFixed(4))} × {best.tier.label} = LKR {best.total % 1 === 0 ? best.total.toLocaleString() : best.total.toFixed(2)}
+                                </Typography>
+                              )}
+                            </>
+                          ) : (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <TextField label="Qty" type="number" size="small" value={addItemSimpleQty}
+                                onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v > 0) setAddItemSimpleQty(v); }}
+                                slotProps={{ htmlInput: { min: 1 } }} sx={{ width: 80 }} />
+                              <Typography variant="body2" color="text.secondary">{addItemProduct.unit}</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700, ml: 1 }}>= LKR {(addItemProduct.price * addItemSimpleQty).toLocaleString()}</Typography>
+                            </Box>
+                          )}
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                            <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={addItemToEdit} disabled={!canAdd}>
+                              Add to Order
+                            </Button>
+                          </Box>
+                        </Box>
+                      );
+                    })()}
                   </Box>
                 </>
               )}
