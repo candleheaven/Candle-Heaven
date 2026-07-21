@@ -300,7 +300,7 @@ export default function TrackOrder() {
               onChange={e => setOrderInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleTrack()}
               sx={{ mb: 2 }}
-              inputProps={{ style: { letterSpacing: 0.5 } }}
+              slotProps={{ htmlInput: { style: { letterSpacing: 0.5 } } }}
             />
             <TextField
               label="Last 4 digits of your phone"
@@ -309,7 +309,7 @@ export default function TrackOrder() {
               value={phone}
               onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 4))}
               onKeyDown={e => e.key === 'Enter' && handleTrack()}
-              inputProps={{ maxLength: 4, inputMode: 'numeric' }}
+              slotProps={{ htmlInput: { maxLength: 4, inputMode: 'numeric' } }}
               sx={{ mb: 2.5 }}
             />
             {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
