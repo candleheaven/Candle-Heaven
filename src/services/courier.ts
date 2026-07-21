@@ -1,6 +1,7 @@
 const TOKEN = import.meta.env.VITE_CURFOX_TOKEN as string;
 const BASE = 'https://v2-operations.api.curfox.com/api';
 const TENANT = 'royalexpress';
+const COURIER_NAME = 'Royal Express';
 
 // ─── Tracking ─────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ export interface TrackingEvent {
 
 export interface TrackingInfo {
   waybillNumber: string;
+  courierName: string;
   currentStatus: string;
   currentColor: string;
   recipientName?: string;
@@ -73,6 +75,7 @@ function parseTracking(waybillNumber: string, raw: unknown): TrackingInfo {
   const first = events[0];
   return {
     waybillNumber,
+    courierName: COURIER_NAME,
     currentStatus: first?.description ?? 'Unknown',
     currentColor: first?.color ?? '#9E9E9E',
     recipientName: order.customer_name ? String(order.customer_name) : undefined,

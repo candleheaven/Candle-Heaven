@@ -81,6 +81,7 @@ function buildShippedMessage(order: AdminOrder): string {
     `Hi ${order.customer.name}! 📦\n\n` +
     `Your Candle Heaven order is on its way!\n\n` +
     `*Order No:* ${order.orderNumber}\n` +
+    `*Courier:* Royal Express\n` +
     `*Tracking No:* ${order.waybillNumber ?? 'N/A'}\n` +
     `*Amount Due:* LKR ${order.total.toLocaleString()}\n\n` +
     `Track your order here:\n` +

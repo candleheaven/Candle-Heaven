@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, TextField, Button, Paper, CircularProgress,
-  Chip, Divider, Alert, IconButton, Tooltip, List, ListItem,
-  ListItemText,
+  Chip, Divider, Alert, IconButton, Tooltip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
@@ -350,7 +349,9 @@ export default function TrackOrder() {
             {order.waybillNumber && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.5, p: 1.5, bgcolor: '#F4F6F9', borderRadius: 2 }}>
                 <Box sx={{ flex: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Tracking Number{courierInfo ? ` · ${courierInfo.courierName}` : ''}
+                  </Typography>
                   <Typography variant="body1" sx={{ fontWeight: 600, fontFamily: 'monospace', letterSpacing: 0.5 }}>
                     {order.waybillNumber}
                   </Typography>
@@ -397,7 +398,7 @@ export default function TrackOrder() {
             {hasShipped && (
               <>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', mb: 1.5 }}>
-                  Courier Updates
+                  {courierInfo ? `${courierInfo.courierName} Updates` : 'Courier Updates'}
                 </Typography>
                 <CourierTimeline info={courierInfo} loading={courierLoading} error={courierError} />
                 <Divider sx={{ my: 2 }} />
@@ -416,42 +417,74 @@ export default function TrackOrder() {
             )}
 
             {/* Order summary */}
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', mb: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', mb: 1.5 }}>
               Order Summary
             </Typography>
 
-            <List dense disablePadding sx={{ mb: 1.5 }}>
+            {/* Item rows */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
               {order.items.map((item, i) => (
-                <ListItem key={i} disablePadding sx={{ py: 0.3 }}>
-                  <ListItemText
-                    primary={
-                      <Typography variant="body2">
-                        {item.name}{item.unit && item.unit !== 'piece' ? ` — ${item.unit}` : ''}
-                      </Typography>
-                    }
-                    secondary={`Qty: ${item.quantity}`}
-                    secondaryTypographyProps={{ variant: 'caption' }}
-                  />
-                </ListItem>
-              ))}
-            </List>
+                <Box
+                  key={i}
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.5,
+                    p: 1.25, bgcolor: '#F4F6F9', borderRadius: 2,
+                  }}
+                >
+                  {/* Qty badge */}
+                  <Box sx={{
+                    minWidth: 32, height: 32, borderRadius: 1.5,
+                    bgcolor: NAVY, color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11 }}>
+                      ×{item.quantity}
+                    </Typography>
+                  </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="body2" color="text.secondary">Delivery to</Typography>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                {[order.customer.city, order.customer.district].filter(Boolean).join(', ')}
-              </Typography>
+                  {/* Name + unit */}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                      {item.name}
+                    </Typography>
+                    {item.unit && item.unit !== 'piece' && (
+                      <Typography variant="caption" color="text.secondary">{item.unit}</Typography>
+                    )}
+                  </Box>
+
+                  {/* Line total */}
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: NAVY, flexShrink: 0 }}>
+                    LKR {(item.price * item.quantity).toLocaleString()}
+                  </Typography>
+                </Box>
+              ))}
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-              <Typography variant="body2" color="text.secondary">Order Total</Typography>
-              <Typography variant="body2" sx={{ fontWeight: 700, color: NAVY }}>
-                LKR {order.total.toLocaleString()}
-              </Typography>
+            {/* Totals block */}
+            <Box sx={{ bgcolor: '#F4F6F9', borderRadius: 2, p: 1.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+              {order.deliveryFee != null && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body2" color="text.secondary">Delivery fee</Typography>
+                  <Typography variant="body2">LKR {order.deliveryFee.toLocaleString()}</Typography>
+                </Box>
+              )}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: order.deliveryFee != null ? 0.75 : 0, borderTop: order.deliveryFee != null ? '1px solid' : 'none', borderColor: 'divider' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>Total</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: NAVY }}>
+                  LKR {order.total.toLocaleString()}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Delivery to</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {[order.customer.city, order.customer.district].filter(Boolean).join(', ')}
+                </Typography>
+              </Box>
             </Box>
 
             {order.paymentStatus && order.paymentStatus !== 'paid' && (
-              <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#FFF8EC', border: '1px solid #F5DFA0', borderRadius: 2, display: 'flex', justifyContent: 'space-between' }}>
+              <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#FFF8EC', border: '1px solid #F5DFA0', borderRadius: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="body2" sx={{ fontWeight: 500, color: '#7A5C00' }}>
                   {order.paymentStatus === 'partially_paid' ? 'Partially Paid — Balance Due' : 'Payment Due on Delivery'}
                 </Typography>

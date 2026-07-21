@@ -83,6 +83,8 @@ export default function App() {
                   <Route path="/my-orders" element={<MyOrders />} />
                   <Route path="/track" element={<TrackOrder />} />
                   <Route path="/track/:orderNumber" element={<TrackOrder />} />
+                  <Route path="/tracking" element={<TrackOrder />} />
+                  <Route path="/tracking/:orderNumber" element={<TrackOrder />} />
                 </Route>
               </Routes>
             </BrowserRouter>
