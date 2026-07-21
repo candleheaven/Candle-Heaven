@@ -16,10 +16,12 @@ service cloud.firestore {
     // Employees can read, update, and delete any order.
     match /orders/{orderId} {
       allow create: if true;
-      allow read, update: if request.auth != null && (
+      allow get, update: if request.auth != null && (
         request.auth.token.admin == true ||
         resource.data.userId == request.auth.uid
       );
+      // Public order tracking: limit(1) query by orderNumber only — can't dump the collection
+      allow list: if request.auth != null || request.query.limit <= 1;
       allow delete: if request.auth != null && request.auth.token.admin == true;
     }
 

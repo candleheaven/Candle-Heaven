@@ -14,6 +14,7 @@ import ProductDetail from './pages/ProductDetail';
 import Checkout from './pages/Checkout';
 import OrderConfirmation from './pages/OrderConfirmation';
 import MyOrders from './pages/MyOrders';
+import TrackOrder from './pages/TrackOrder';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminLayout from './pages/admin/AdminLayout';
 import Dashboard from './pages/admin/Dashboard';
@@ -80,6 +81,8 @@ export default function App() {
                   <Route path="/checkout" element={<Checkout />} />
                   <Route path="/order-confirmation" element={<OrderConfirmation />} />
                   <Route path="/my-orders" element={<MyOrders />} />
+                  <Route path="/track" element={<TrackOrder />} />
+                  <Route path="/track/:orderNumber" element={<TrackOrder />} />
                 </Route>
               </Routes>
             </BrowserRouter>

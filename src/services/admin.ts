@@ -1,6 +1,6 @@
 import {
   collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc,
-  query, orderBy, where, serverTimestamp, increment, deleteField,
+  query, orderBy, where, serverTimestamp, increment, deleteField, arrayUnion,
 } from 'firebase/firestore';
 import { generateOrderNumber, generateOrderNumberMock } from './orderNumber';
 import { db } from './firebase';
@@ -339,7 +339,10 @@ export async function adminUpdateOrderStatus(
     );
     return;
   }
-  await updateDoc(doc(db, 'orders', orderId), { status });
+  await updateDoc(doc(db, 'orders', orderId), {
+    status,
+    statusHistory: arrayUnion({ status, at: new Date().toISOString() }),
+  });
 }
 
 /**

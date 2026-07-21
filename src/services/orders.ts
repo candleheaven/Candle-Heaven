@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, limit } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Order, OrderStatus } from '../types';
 import { generateOrderNumber, generateOrderNumberMock } from './orderNumber';
@@ -43,6 +43,38 @@ export async function placeOrder(order: Omit<Order, 'id' | 'orderNumber' | 'crea
 export interface UserOrder extends Omit<Order, 'createdAt'> {
   orderNumber: string;
   createdAt: string;
+}
+
+async function queryOrderBy(field: string, value: string): Promise<UserOrder | null> {
+  const snap = await getDocs(
+    query(collection(db, 'orders'), where(field, '==', value), limit(1))
+  );
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  const data = d.data();
+  return {
+    ...data,
+    id: d.id,
+    orderNumber: data.orderNumber ?? d.id,
+    createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? new Date().toISOString(),
+    status: (data.status ?? 'pending') as OrderStatus,
+  } as UserOrder;
+}
+
+export async function getOrderByNumber(orderNumber: string): Promise<UserOrder | null> {
+  if (USE_MOCK) {
+    const all = JSON.parse(localStorage.getItem('ch_dev_orders') ?? '[]') as UserOrder[];
+    return all.find(o => o.orderNumber === orderNumber) ?? null;
+  }
+  return queryOrderBy('orderNumber', orderNumber);
+}
+
+export async function getOrderByWaybill(waybillNumber: string): Promise<UserOrder | null> {
+  if (USE_MOCK) {
+    const all = JSON.parse(localStorage.getItem('ch_dev_orders') ?? '[]') as UserOrder[];
+    return all.find(o => o.waybillNumber === waybillNumber) ?? null;
+  }
+  return queryOrderBy('waybillNumber', waybillNumber);
 }
 
 export async function getMyOrders(userId: string): Promise<UserOrder[]> {

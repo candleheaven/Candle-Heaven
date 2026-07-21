@@ -110,6 +110,7 @@ export interface Order {
   damagedItems?: { cartKey: string; damagedQty: number }[];
   paymentStatus?: 'unpaid' | 'paid' | 'partially_paid';
   paymentInfo?: PaymentInfo;
+  statusHistory?: { status: OrderStatus; at: string }[];
   courierInvoice?: CourierAssignment;
   fulfillmentType?: FulfillmentType;
 }
