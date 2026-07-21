@@ -81,10 +81,12 @@ function buildShippedMessage(order: AdminOrder): string {
     `Hi ${order.customer.name}! 📦\n\n` +
     `Your Candle Heaven order is on its way!\n\n` +
     `*Order No:* ${order.orderNumber}\n` +
-    `*Waybill No:* ${order.waybillNumber ?? 'N/A'}\n\n` +
+    `*Tracking No:* ${order.waybillNumber ?? 'N/A'}\n` +
+    `*Amount Due:* LKR ${order.total.toLocaleString()}\n\n` +
     `You can track your parcel here:\n` +
     `https://www.royalexpress.lk/trackyourparcel.html\n\n` +
-    `Expected delivery in 1–3 business days. 🕯️`
+    `Expected delivery in 1–3 business days.\n\n` +
+    `Thank you for shopping with Candle Heaven! 🕯️`
   );
 }
 
