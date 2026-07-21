@@ -1,0 +1,16 @@
+{
+  "name": "Candle Heaven Admin",
+  "short_name": "CH Admin",
+  "start_url": "/admin/dashboard",
+  "display": "standalone",
+  "background_color": "#132040",
+  "theme_color": "#132040",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

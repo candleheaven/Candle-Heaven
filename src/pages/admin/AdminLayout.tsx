@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   Box, Drawer, AppBar, Toolbar, Typography, IconButton,
@@ -133,6 +133,12 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
 
 export default function AdminLayout() {
   const { isAdminAuthenticated, initializing } = useAdminAuth();
+
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (link) link.href = '/admin-manifest.json';
+    return () => { if (link) link.href = '/manifest.json'; };
+  }, []);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [drawerOpen, setDrawerOpen] = useState(false);
