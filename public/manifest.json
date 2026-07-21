@@ -1,0 +1,16 @@
+{
+  "name": "Candle Heaven",
+  "short_name": "Candle Heaven",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#132040",
+  "theme_color": "#132040",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
