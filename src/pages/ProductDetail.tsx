@@ -536,7 +536,9 @@ function SelectablePackSelector({ product }: { product: Product }) {
       const cur = prev[productId] ?? 0;
       const pp = poolProducts.find(x => x.id === productId);
       const maxStock = pp?.stock ?? 0;
-      if (delta > 0 && (remaining <= 0 || cur >= maxStock)) return prev;
+      const curTotal = Object.values(prev).reduce((s, v) => s + v, 0);
+      const curRemaining = pickCount - curTotal;
+      if (delta > 0 && (curRemaining <= 0 || cur >= maxStock)) return prev;
       if (delta < 0 && cur <= 0) return prev;
       const next = cur + delta;
       if (next <= 0) {
@@ -569,7 +571,8 @@ function SelectablePackSelector({ product }: { product: Product }) {
     setTimeout(() => setAdded(false), 3000);
   }
 
-  const isAvailable = pool.length > 0 && poolProducts.some(p => p.stock > 0);
+  const totalPoolStock = poolProducts.reduce((s, p) => s + p.stock, 0);
+  const isAvailable = totalPoolStock >= pickCount;
 
   return (
     <Box>
