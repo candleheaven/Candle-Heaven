@@ -129,7 +129,15 @@ export default function Products() {
             ))
           : filtered.map(p => (
               <Grid size={{ xs: 12, sm: 6, md: 3 }} key={p.id}>
-                <ProductCard product={p} />
+                <ProductCard
+                  product={p}
+                  packAvailable={p.isStarterPack
+                    ? (p.packComponents?.every(comp => {
+                        const cp = all.find(x => x.id === comp.productId);
+                        return cp !== undefined && cp.stock >= comp.quantity;
+                      }) ?? false)
+                    : undefined}
+                />
               </Grid>
             ))}
       </Grid>

@@ -1,3 +1,11 @@
+export interface PackComponent {
+  productId: string;
+  name: string;
+  quantity: number;    // in base stock unit (g/ml for tiered; product.unit for simple)
+  unit: string;        // base unit label shown to customer (g, ml, piece, etc.)
+  retailPrice: number; // retail value at this quantity (for savings display)
+}
+
 export interface PriceTier {
   label: string;      // Display: "250g", "500g", "1 kg+"
   qty: number;        // Quantity in inputUnit (250 for 250g; 1 for bulk "per kg")
@@ -23,6 +31,8 @@ export interface Product {
   priceTiers?: PriceTier[];
   allowDecimal?: boolean;  // Allow fractional quantities (wax, fragrances, etc.)
   weightGrams?: number;    // Weight per unit in grams (for simple products; tiered products use qty as weight)
+  isStarterPack?: boolean;
+  packComponents?: PackComponent[];
 }
 
 export interface CartItem {
@@ -39,6 +49,7 @@ export interface CartItem {
   maxCartQty?: number;   // Max quantity in this line's unit before hitting stock (stock / tierBase for tiered, stock for simple)
   weightGrams?: number;  // Total weight for this line item in grams (quantity × unit weight)
   category?: string;     // Product category — used for category-scoped promo eligibility
+  packComponents?: { productId: string; quantity: number }[]; // Component deductions for starter packs
 }
 
 export interface CustomerInfo {

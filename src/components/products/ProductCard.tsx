@@ -17,21 +17,27 @@ import { useCart } from '../../context/CartContext';
 
 interface Props {
   product: Product;
+  packAvailable?: boolean; // availability override for starter packs (derived from component stock)
 }
 
-export default function ProductCard({ product }: Props) {
+export default function ProductCard({ product, packAvailable }: Props) {
   const navigate = useNavigate();
   const { addItem, openCart, items: cartItems } = useCart();
   const [snackOpen, setSnackOpen] = useState(false);
 
-  const inStock = product.stock > 0;
-
+  const isPack = Boolean(product.isStarterPack);
+  const inStock = isPack ? (packAvailable ?? false) : product.stock > 0;
   const hasTiers = Boolean(product.priceTiers?.length);
+
+  const retailSum = isPack
+    ? (product.packComponents?.reduce((s, c) => s + c.retailPrice, 0) ?? 0)
+    : 0;
+  const savings = retailSum > product.price ? retailSum - product.price : 0;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!inStock) return;
-    if (hasTiers) {
+    if (isPack || hasTiers) {
       navigate(`/products/${product.id}`);
       return;
     }
@@ -97,13 +103,13 @@ export default function ProductCard({ product }: Props) {
               <Chip label="Out of Stock" color="error" size="small" />
             </Box>
           )}
-          {product.featured && inStock && (
-            <Chip
-              label="Featured"
-              color="primary"
-              size="small"
-              sx={{ position: 'absolute', top: 8, left: 8 }}
-            />
+          {isPack && inStock && (
+            <Chip label="Starter Pack" size="small"
+              sx={{ position: 'absolute', top: 8, left: 8, fontWeight: 700, bgcolor: '#C9A96E', color: '#132040' }} />
+          )}
+          {product.featured && !isPack && inStock && (
+            <Chip label="Featured" color="primary" size="small"
+              sx={{ position: 'absolute', top: 8, left: 8 }} />
           )}
         </Box>
 
@@ -136,9 +142,12 @@ export default function ProductCard({ product }: Props) {
                 <Typography variant="h6" sx={{ fontWeight: 700 }} color="primary.main">
                   LKR {product.price.toLocaleString()}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  per {product.unit}
-                </Typography>
+                {savings > 0 ? (
+                  <Chip label={`Save LKR ${savings.toLocaleString()}`} size="small"
+                    sx={{ height: 18, fontSize: 10, fontWeight: 700, bgcolor: '#D4EDDA', color: '#155724', mt: 0.25 }} />
+                ) : (
+                  <Typography variant="caption" color="text.secondary">per {product.unit}</Typography>
+                )}
               </>
             )}
           </Box>

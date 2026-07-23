@@ -53,15 +53,26 @@ function toProduct(snap: QueryDocumentSnapshot<DocumentData>): Product {
     ...(d.weightGrams  && { weightGrams: d.weightGrams }),
     ...(d.averageCost        !== undefined && { averageCost: d.averageCost }),
     ...(d.lowStockThreshold  !== undefined && { lowStockThreshold: d.lowStockThreshold }),
+    ...(d.isStarterPack  && { isStarterPack: d.isStarterPack }),
+    ...(d.packComponents && { packComponents: d.packComponents }),
   };
 }
 
 const inStock = (p: Product) => p.stock > 0;
 
 export async function getAllProducts(): Promise<Product[]> {
-  if (USE_MOCK) return getMockProducts().filter(p => !p.isPackaging && inStock(p)).sort((a, b) => a.name.localeCompare(b.name));
+  if (USE_MOCK) return getMockProducts().filter(p => !p.isPackaging && (p.isStarterPack || inStock(p))).sort((a, b) => a.name.localeCompare(b.name));
   const snap = await getDocs(query(collection(db, COLLECTION), orderBy('name')));
-  return snap.docs.map(toProduct).filter(p => !p.isPackaging && inStock(p));
+  return snap.docs.map(toProduct).filter(p => !p.isPackaging && (p.isStarterPack || inStock(p)));
+}
+
+export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (!ids.length) return [];
+  if (USE_MOCK) return getMockProducts().filter(p => ids.includes(p.id ?? ''));
+  const results = await Promise.all(ids.map(id => getDoc(doc(db, COLLECTION, id))));
+  return results
+    .filter(s => s.exists())
+    .map(s => toProduct(s as QueryDocumentSnapshot<DocumentData>));
 }
 
 export async function getProductsByCategory(category: string): Promise<Product[]> {

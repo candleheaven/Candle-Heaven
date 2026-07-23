@@ -11,7 +11,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { DeleteOutlined as DeleteOutlineIcon } from '@mui/icons-material';
 import { HelpOutlined as HelpOutlineIcon } from '@mui/icons-material';
 import { adminGetAllProducts, adminAddProduct, adminUpdateProduct } from '../../services/admin';
-import type { Product, PriceTier } from '../../types';
+import type { Product, PriceTier, PackComponent } from '../../types';
 
 const NAVY = '#132040';
 
@@ -27,6 +27,14 @@ const CATEGORIES = [
 ];
 
 const UNITS = ['g', 'kg', 'ml', 'L', 'piece', 'pack', 'set'];
+
+interface PackFormComponent {
+  productId: string;
+  name: string;
+  quantity: string;    // input value as string; stored in base stock unit of the component
+  unit: string;        // display unit label
+  retailPrice: string; // input value as string
+}
 
 interface FormState {
   name: string;
@@ -46,6 +54,8 @@ interface FormState {
   allowDecimal: boolean;
   lowStockThreshold: string;
   costPrice: string;  // buying cost in display unit (LKR/kg, LKR/piece, etc.)
+  isStarterPack: boolean;
+  packComponents: PackFormComponent[];
 }
 
 const EMPTY_TIER: PriceTier = { label: '', qty: 1, inputUnit: 'g', price: 0, isBulk: false };
@@ -61,7 +71,18 @@ const EMPTY: FormState = {
   allowDecimal: false,
   lowStockThreshold: '',
   costPrice: '',
+  isStarterPack: false,
+  packComponents: [],
 };
+
+// Unit label to use for pack component quantity entry
+function getComponentUnit(p: Product): string {
+  if (!p.priceTiers?.length) return p.unit; // simple product — enter in product.unit
+  // Tiered: stock is in base units (grams/ml), even if unit is 'kg'/'L'
+  if (p.unit === 'kg') return 'g';
+  if (p.unit === 'L') return 'ml';
+  return p.unit;
+}
 
 export default function ProductForm() {
   const navigate = useNavigate();
@@ -69,46 +90,56 @@ export default function ProductForm() {
   const isEditing = Boolean(id);
 
   const [form, setForm] = useState<FormState>(EMPTY);
-  const [loading, setLoading] = useState(isEditing);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [newCompProductId, setNewCompProductId] = useState('');
 
   useEffect(() => {
-    if (!id) return;
     adminGetAllProducts().then(products => {
-      const p = products.find(x => x.id === id);
-      if (p) {
-        setForm({
-          name: p.name,
-          description: p.description,
-          category: p.category,
-          price: p.price.toString(),
-          unit: p.unit,
-          // For tiered products, convert stored base-unit stock back to display unit for the field
-          stock: (() => {
-            if (!p.priceTiers?.length) return p.stock.toString();
-            const u = UNITS.includes(p.unit) ? p.unit : 'g';
-            const m = (u === 'kg' || u === 'L') ? 1000 : 1;
-            return (p.stock / m).toString();
-          })(),
-          minOrder: p.minOrder.toString(),
-          featured: p.featured,
-          isPackaging: p.isPackaging ?? false,
-          imageUrls: p.images.length ? p.images : [''],
-          weightGrams: p.weightGrams?.toString() ?? '',
-          pricingMode: p.priceTiers?.length ? 'tiered' : 'simple',
-          // If product.unit is a standard unit it was set explicitly; otherwise infer from tiers
-          stockUnit: UNITS.includes(p.unit) ? p.unit : (p.priceTiers?.[0]?.inputUnit ?? 'g'),
-          priceTiers: p.priceTiers ? [...p.priceTiers] : [],
-          allowDecimal: p.allowDecimal ?? false,
-          lowStockThreshold: p.lowStockThreshold !== undefined ? p.lowStockThreshold.toString() : '',
-          costPrice: (() => {
-            if (p.averageCost === undefined) return '';
-            const u = UNITS.includes(p.unit) ? p.unit : (p.priceTiers?.[0]?.inputUnit ?? 'g');
-            const m = (u === 'kg' || u === 'L') ? 1000 : 1;
-            return parseFloat((p.averageCost * m).toFixed(4)).toString();
-          })(),
-        });
+      setAllProducts(products);
+      if (id) {
+        const p = products.find(x => x.id === id);
+        if (p) {
+          setForm({
+            name: p.name,
+            description: p.description,
+            category: p.category,
+            price: p.price.toString(),
+            unit: p.unit,
+            stock: (() => {
+              if (!p.priceTiers?.length) return p.stock.toString();
+              const u = UNITS.includes(p.unit) ? p.unit : 'g';
+              const m = (u === 'kg' || u === 'L') ? 1000 : 1;
+              return (p.stock / m).toString();
+            })(),
+            minOrder: p.minOrder.toString(),
+            featured: p.featured,
+            isPackaging: p.isPackaging ?? false,
+            imageUrls: p.images.length ? p.images : [''],
+            weightGrams: p.weightGrams?.toString() ?? '',
+            pricingMode: p.priceTiers?.length ? 'tiered' : 'simple',
+            stockUnit: UNITS.includes(p.unit) ? p.unit : (p.priceTiers?.[0]?.inputUnit ?? 'g'),
+            priceTiers: p.priceTiers ? [...p.priceTiers] : [],
+            allowDecimal: p.allowDecimal ?? false,
+            lowStockThreshold: p.lowStockThreshold !== undefined ? p.lowStockThreshold.toString() : '',
+            costPrice: (() => {
+              if (p.averageCost === undefined) return '';
+              const u = UNITS.includes(p.unit) ? p.unit : (p.priceTiers?.[0]?.inputUnit ?? 'g');
+              const m = (u === 'kg' || u === 'L') ? 1000 : 1;
+              return parseFloat((p.averageCost * m).toFixed(4)).toString();
+            })(),
+            isStarterPack: p.isStarterPack ?? false,
+            packComponents: (p.packComponents ?? []).map(c => ({
+              productId: c.productId,
+              name: c.name,
+              quantity: c.quantity.toString(),
+              unit: c.unit,
+              retailPrice: c.retailPrice.toString(),
+            })),
+          });
+        }
       }
       setLoading(false);
     });
@@ -139,14 +170,24 @@ export default function ProductForm() {
     if (!form.name.trim()) return 'Product name is required.';
     if (!form.description.trim()) return 'Description is required.';
     if (!form.category) return 'Category is required.';
+    const price = parseFloat(form.price);
+    if (isNaN(price) || price <= 0) return 'Enter a valid price.';
+
+    if (form.isStarterPack) {
+      if (form.packComponents.length === 0) return 'Add at least one component to the starter pack.';
+      for (const [i, c] of form.packComponents.entries()) {
+        if (!c.productId) return `Component ${i + 1}: select a product.`;
+        if (!parseFloat(c.quantity) || parseFloat(c.quantity) <= 0) return `Component ${i + 1}: enter a valid quantity.`;
+      }
+      return '';
+    }
+
     const stock = parseInt(form.stock, 10);
     if (isNaN(stock) || stock < 0) return 'Enter a valid stock quantity.';
     const minOrder = parseInt(form.minOrder, 10);
     if (isNaN(minOrder) || minOrder < 1) return 'Min order must be at least 1.';
 
     if (form.pricingMode === 'simple') {
-      const price = parseFloat(form.price);
-      if (isNaN(price) || price <= 0) return 'Enter a valid price.';
       if (!form.unit.trim()) return 'Unit is required (e.g. 500g, piece).';
     } else {
       if (form.priceTiers.length === 0) return 'Add at least one price tier.';
@@ -167,12 +208,23 @@ export default function ProductForm() {
     setError('');
     setSaving(true);
 
-    const isTiered = form.pricingMode === 'tiered';
-    // For tiered products, set the base price to the minimum tier price for display
-    const basePrice = isTiered
-      ? Math.min(...form.priceTiers.map(t => t.price))
-      : parseFloat(form.price);
-    const baseUnit = isTiered ? form.stockUnit : form.unit.trim();
+    const isTiered = !form.isStarterPack && form.pricingMode === 'tiered';
+    const basePrice = form.isStarterPack
+      ? parseFloat(form.price)
+      : isTiered
+        ? Math.min(...form.priceTiers.map(t => t.price))
+        : parseFloat(form.price);
+    const baseUnit = form.isStarterPack ? 'pack' : isTiered ? form.stockUnit : form.unit.trim();
+
+    const packComponents: PackComponent[] | undefined = form.isStarterPack
+      ? form.packComponents.map(c => ({
+          productId: c.productId,
+          name: c.name,
+          quantity: parseFloat(c.quantity) || 0,
+          unit: c.unit,
+          retailPrice: parseFloat(c.retailPrice) || 0,
+        }))
+      : undefined;
 
     const product: Omit<Product, 'id'> = {
       name: form.name.trim(),
@@ -180,23 +232,27 @@ export default function ProductForm() {
       category: form.category,
       price: basePrice,
       unit: baseUnit,
-      stock: isTiered
-        ? Math.round(parseFloat(form.stock) * ((form.stockUnit === 'kg' || form.stockUnit === 'L') ? 1000 : 1))
-        : parseInt(form.stock, 10),
-      minOrder: parseInt(form.minOrder, 10),
-      featured: form.isPackaging ? false : form.featured,
+      stock: form.isStarterPack
+        ? 0
+        : isTiered
+          ? Math.round(parseFloat(form.stock) * ((form.stockUnit === 'kg' || form.stockUnit === 'L') ? 1000 : 1))
+          : parseInt(form.stock, 10),
+      minOrder: form.isStarterPack ? 1 : parseInt(form.minOrder, 10),
+      featured: (form.isPackaging || form.isStarterPack) ? false : form.featured,
       isPackaging: form.isPackaging || undefined,
       images: form.imageUrls.map(u => u.trim()).filter(Boolean),
       priceTiers: isTiered ? form.priceTiers : undefined,
-      allowDecimal: form.allowDecimal,
+      allowDecimal: false,
       weightGrams: form.weightGrams ? parseFloat(form.weightGrams) : undefined,
-      lowStockThreshold: form.lowStockThreshold ? parseFloat(form.lowStockThreshold) : undefined,
+      lowStockThreshold: form.isStarterPack ? undefined : (form.lowStockThreshold ? parseFloat(form.lowStockThreshold) : undefined),
       averageCost: (() => {
-        if (!form.costPrice) return undefined;
+        if (form.isStarterPack || !form.costPrice) return undefined;
         const displayUnit = isTiered ? form.stockUnit : form.unit.trim();
         const m = (displayUnit === 'kg' || displayUnit === 'L') ? 1000 : 1;
         return parseFloat((parseFloat(form.costPrice) / m).toFixed(6));
       })(),
+      isStarterPack: form.isStarterPack || undefined,
+      packComponents,
     };
 
     try {
@@ -258,6 +314,163 @@ export default function ProductForm() {
                   {CATEGORIES.map(c => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
                 </TextField>
               </Grid>
+
+              {/* Starter Pack toggle */}
+              <Grid size={{ xs: 12 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.isStarterPack}
+                      onChange={e => setForm(f => ({
+                        ...f,
+                        isStarterPack: e.target.checked,
+                        category: e.target.checked ? 'kits' : f.category,
+                        pricingMode: 'simple',
+                      }))}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Starter Pack</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Bundle of items at a fixed price — availability derived from component stock
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Grid>
+
+              {/* Pack component builder */}
+              {form.isStarterPack && (
+                <Grid size={{ xs: 12 }}>
+                  <Divider sx={{ mb: 2 }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>Pack Components</Typography>
+
+                  {form.packComponents.length > 0 && (
+                    <Box sx={{ overflowX: 'auto', mb: 1.5 }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
+                            <TableCell>Product</TableCell>
+                            <TableCell>Qty</TableCell>
+                            <TableCell>Unit</TableCell>
+                            <TableCell>Retail Price (LKR)</TableCell>
+                            <TableCell />
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {form.packComponents.map((comp, i) => (
+                            <TableRow key={i}>
+                              <TableCell>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>{comp.name}</Typography>
+                              </TableCell>
+                              <TableCell>
+                                <TextField
+                                  size="small" type="number" value={comp.quantity}
+                                  onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, quantity: e.target.value } : c) }))}
+                                  slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                  sx={{ width: 90 }}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Typography variant="body2" color="text.secondary">{comp.unit}</Typography>
+                              </TableCell>
+                              <TableCell>
+                                <TextField
+                                  size="small" type="number" value={comp.retailPrice}
+                                  onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, retailPrice: e.target.value } : c) }))}
+                                  slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                  sx={{ width: 110 }}
+                                  helperText="for savings calc"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <IconButton size="small" color="error"
+                                  onClick={() => setForm(f => ({ ...f, packComponents: f.packComponents.filter((_, idx) => idx !== i) }))}>
+                                  <DeleteOutlineIcon fontSize="small" />
+                                </IconButton>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
+                  )}
+
+                  {/* Computed savings */}
+                  {form.packComponents.length > 0 && (() => {
+                    const retailSum = form.packComponents.reduce((s, c) => s + (parseFloat(c.retailPrice) || 0), 0);
+                    const packPrice = parseFloat(form.price) || 0;
+                    const savings = retailSum - packPrice;
+                    return savings > 0 ? (
+                      <Typography variant="caption" sx={{ color: 'success.main', display: 'block', mb: 1.5 }}>
+                        Savings for customer: LKR {savings.toLocaleString()} vs. buying separately
+                      </Typography>
+                    ) : null;
+                  })()}
+
+                  {/* Add component row */}
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <TextField
+                      select
+                      size="small"
+                      label="Add component"
+                      value={newCompProductId}
+                      onChange={e => setNewCompProductId(e.target.value)}
+                      sx={{ minWidth: 220 }}
+                    >
+                      <MenuItem value=""><em>Select a product…</em></MenuItem>
+                      {allProducts
+                        .filter(p => !p.isStarterPack && p.id !== id)
+                        .map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)
+                      }
+                    </TextField>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<AddIcon />}
+                      disabled={!newCompProductId}
+                      onClick={() => {
+                        const p = allProducts.find(x => x.id === newCompProductId);
+                        if (!p) return;
+                        const unit = getComponentUnit(p);
+                        setForm(f => ({
+                          ...f,
+                          packComponents: [...f.packComponents, {
+                            productId: p.id!,
+                            name: p.name,
+                            quantity: '1',
+                            unit,
+                            retailPrice: p.price.toString(),
+                          }],
+                        }));
+                        setNewCompProductId('');
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </Box>
+                  <Divider sx={{ mt: 2 }} />
+                </Grid>
+              )}
+
+              {/* Pack price field (shown when isStarterPack) */}
+              {form.isStarterPack && (
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField
+                    label="Pack Price (LKR)"
+                    value={form.price}
+                    onChange={set('price')}
+                    fullWidth required
+                    type="number"
+                    slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                    helperText="Fixed price for the whole pack"
+                  />
+                </Grid>
+              )}
+
+              {/* Stock / Low stock / Cost / Pricing — hidden for packs */}
+              {!form.isStarterPack && (<>
               <Grid size={{ xs: 12, sm: 3 }}>
                 <TextField label="Stock" value={form.stock} onChange={set('stock')} fullWidth required
                   type="number" slotProps={{ htmlInput: { min: 0, step: 0.001 } }}
@@ -462,6 +675,7 @@ export default function ProductForm() {
                   }
                 />
               </Grid>
+              </>)}
 
               {/* Image + Featured */}
               <Grid size={{ xs: 12 }}>

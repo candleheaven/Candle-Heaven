@@ -193,22 +193,36 @@ async function adjustProductStock(items: CartItem[], delta: -1 | 1): Promise<voi
   if (USE_MOCK) {
     const products = initMockProducts();
     for (const item of items) {
-      const idx = products.findIndex(p => p.id === item.productId);
-      if (idx === -1) continue;
-      const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
-      products[idx] = {
-        ...products[idx],
-        stock: Math.max(0, products[idx].stock + Math.round(baseUnits * delta)),
-      };
+      if (item.packComponents?.length) {
+        for (const comp of item.packComponents) {
+          const idx = products.findIndex(p => p.id === comp.productId);
+          if (idx !== -1) {
+            products[idx] = { ...products[idx], stock: Math.max(0, products[idx].stock + Math.round(comp.quantity * item.quantity * delta)) };
+          }
+        }
+      } else {
+        const idx = products.findIndex(p => p.id === item.productId);
+        if (idx === -1) continue;
+        const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
+        products[idx] = { ...products[idx], stock: Math.max(0, products[idx].stock + Math.round(baseUnits * delta)) };
+      }
     }
     saveMockProducts(products);
     return;
   }
   for (const item of items) {
-    const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
-    await updateDoc(doc(db, 'products', item.productId), {
-      stock: increment(Math.round(baseUnits * delta)),
-    });
+    if (item.packComponents?.length) {
+      for (const comp of item.packComponents) {
+        await updateDoc(doc(db, 'products', comp.productId), {
+          stock: increment(Math.round(comp.quantity * item.quantity * delta)),
+        });
+      }
+    } else {
+      const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
+      await updateDoc(doc(db, 'products', item.productId), {
+        stock: increment(Math.round(baseUnits * delta)),
+      });
+    }
   }
 }
 

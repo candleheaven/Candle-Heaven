@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container, Grid, Box, Typography, Button, Chip, Divider,
-  TextField, Skeleton, Alert, Breadcrumbs, Link, Stack,
+  TextField, Skeleton, Alert, Breadcrumbs, Link, Stack, List,
+  ListItem, ListItemText,
 } from '@mui/material';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
-import { getProductById } from '../services/products';
+import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
+import { getProductById, getProductsByIds } from '../services/products';
 import { useCart } from '../context/CartContext';
 import type { Product, CartItem, PriceTier } from '../types';
 
@@ -388,6 +390,128 @@ function BulkTieredSelector({
   );
 }
 
+// ─── Starter Pack selector ────────────────────────────────────────────────────
+
+function formatQty(qty: number, unit: string): string {
+  if (unit === 'g' && qty >= 1000) return `${parseFloat((qty / 1000).toFixed(3))} kg`;
+  if (unit === 'ml' && qty >= 1000) return `${parseFloat((qty / 1000).toFixed(3))} L`;
+  return `${qty} ${unit}`;
+}
+
+function PackSelector({ product }: { product: Product }) {
+  const { addItem, openCart, items: cartItems } = useCart();
+  const [componentProducts, setComponentProducts] = useState<Product[]>([]);
+  const [qty, setQty] = useState(1);
+  const [added, setAdded] = useState(false);
+
+  const components = product.packComponents ?? [];
+
+  useEffect(() => {
+    const ids = components.map(c => c.productId);
+    if (ids.length) getProductsByIds(ids).then(setComponentProducts);
+  }, [product.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const maxPackQty = components.length === 0 ? 0 : Math.min(
+    ...components.map(comp => {
+      const cp = componentProducts.find(p => p.id === comp.productId);
+      return cp ? Math.floor(cp.stock / comp.quantity) : 0;
+    })
+  );
+
+  const cartedQty = cartItems.filter(i => i.productId === product.id).reduce((s, i) => s + i.quantity, 0);
+  const available = Math.max(0, maxPackQty - cartedQty);
+  const isAvailable = available > 0;
+
+  const retailSum = components.reduce((s, c) => s + c.retailPrice, 0);
+  const savings = retailSum > product.price ? retailSum - product.price : 0;
+
+  function handleAdd() {
+    addItem({
+      productId: product.id,
+      cartKey: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: qty,
+      unit: 'pack',
+      image: product.images?.[0],
+      decimalQty: false,
+      minQty: 1,
+      maxCartQty: available,
+      category: product.category,
+      packComponents: components.map(c => ({ productId: c.productId, quantity: c.quantity })),
+    });
+    setAdded(true);
+    setTimeout(() => setAdded(false), 3000);
+  }
+
+  return (
+    <Box>
+      {/* What's included */}
+      {components.length > 0 && (
+        <Box sx={{ mb: 3, p: 2, bgcolor: '#F9F7F4', borderRadius: 2 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', display: 'block', mb: 1 }}>
+            What's Included
+          </Typography>
+          <List dense disablePadding>
+            {components.map((comp, i) => (
+              <ListItem key={i} disablePadding sx={{ py: 0.25 }}>
+                <CheckCircleOutlinedIcon sx={{ fontSize: 16, color: 'success.main', mr: 1, flexShrink: 0 }} />
+                <ListItemText
+                  primary={<Typography variant="body2">{comp.name}</Typography>}
+                  secondary={formatQty(comp.quantity, comp.unit)}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+              </ListItem>
+            ))}
+          </List>
+        </Box>
+      )}
+
+      {/* Savings */}
+      {savings > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Chip label={`You save LKR ${savings.toLocaleString()}`} size="small"
+            sx={{ fontWeight: 700, bgcolor: '#D4EDDA', color: '#155724' }} />
+          <Typography variant="caption" color="text.secondary">
+            vs. buying items individually
+          </Typography>
+        </Box>
+      )}
+
+      {/* Qty + add */}
+      {isAvailable ? (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 70 }}>Quantity</Typography>
+            <TextField
+              type="number"
+              size="small"
+              value={qty}
+              onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1 && v <= available) setQty(v); }}
+              slotProps={{ htmlInput: { min: 1, max: available, style: { width: 60, textAlign: 'center' } } }}
+              sx={{ width: 90 }}
+            />
+            <Typography variant="caption" color="text.secondary">{available} available</Typography>
+          </Box>
+          {added && (
+            <Alert severity="success" sx={{ mb: 2 }} action={<Button size="small" onClick={openCart}>View Cart</Button>}>
+              Added to cart!
+            </Alert>
+          )}
+          <Button variant="contained" size="large" fullWidth startIcon={<AddShoppingCartIcon />}
+            onClick={handleAdd} sx={{ py: 1.5 }}>
+            Add to Cart — LKR {(product.price * qty).toLocaleString()}
+          </Button>
+        </>
+      ) : (
+        <Button variant="contained" size="large" fullWidth disabled sx={{ py: 1.5 }}>
+          Out of Stock
+        </Button>
+      )}
+    </Box>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProductDetail() {
@@ -460,6 +584,7 @@ export default function ProductDetail() {
     );
   }
 
+  const isPack = Boolean(product.isStarterPack);
   const inStock = product.stock > 0;
   const imgs = product.images?.length ? product.images : ['/placeholder-product.jpg'];
   const hasTiers = Boolean(product.priceTiers?.length);
@@ -534,12 +659,10 @@ export default function ProductDetail() {
             </Box>
           )}
 
-          <Chip
-            label={stockLabel}
-            color={inStock ? 'success' : 'error'}
-            size="small"
-            sx={{ mb: 3 }}
-          />
+          {isPack
+            ? <Chip label="Starter Pack" size="small" sx={{ bgcolor: '#C9A96E', color: '#132040', fontWeight: 700, mb: 1.5 }} />
+            : <Chip label={stockLabel} color={inStock ? 'success' : 'error'} size="small" sx={{ mb: 3 }} />
+          }
 
           <Typography variant="body1" color="text.secondary" sx={{ mb: 3, lineHeight: 1.8, whiteSpace: 'pre-line' }}>
             {product.description}
@@ -547,7 +670,9 @@ export default function ProductDetail() {
 
           <Divider sx={{ mb: 3 }} />
 
-          {inStock && (
+          {isPack ? (
+            <PackSelector product={product} />
+          ) : inStock ? (
             hasTiers ? (
               <TieredSelector product={product} onAddToCart={addItem} />
             ) : (
@@ -567,9 +692,7 @@ export default function ProductDetail() {
                 </Button>
               </>
             )
-          )}
-
-          {!inStock && (
+          ) : (
             <Button variant="contained" size="large" fullWidth disabled sx={{ py: 1.5 }}>
               Out of Stock
             </Button>
