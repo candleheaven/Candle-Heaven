@@ -459,7 +459,7 @@ function PackSelector({ product }: { product: Product }) {
                 <ListItemText
                   primary={<Typography variant="body2">{comp.name}</Typography>}
                   secondary={formatQty(comp.quantity, comp.unit)}
-                  secondaryTypographyProps={{ variant: 'caption' }}
+                  slotProps={{ secondary: { variant: 'caption' } }}
                 />
               </ListItem>
             ))}
