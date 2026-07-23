@@ -51,6 +51,13 @@ function getBestOption(baseQty: number, tiers: PriceTier[]): BestOption | null {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface PackLine {
+  productId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
 interface OrderItem {
   product: Product;
   quantity: number;
@@ -59,6 +66,8 @@ interface OrderItem {
   price: number;
   decimalQty: boolean;
   tierBase?: number;
+  packComponents?: { productId: string; quantity: number }[];
+  packLines?: PackLine[]; // display-only breakdown shown in order table
 }
 
 interface SavedCustomer {
@@ -107,6 +116,13 @@ export default function CreateOrder() {
   const [citiesLoading, setCitiesLoading] = useState(false);
   const [selectedCity, setSelectedCity] = useState<CurfoxCity | null>(null);
 
+  // Pack customization (expanded inline editor)
+  const [packExpanded, setPackExpanded] = useState(false);
+  const [packLines, setPackLines] = useState<PackLine[]>([]);
+  const [packPrice, setPackPrice] = useState(0);
+  const [packNewCompId, setPackNewCompId] = useState('');
+  const [packNewCompQty, setPackNewCompQty] = useState('1');
+
   // Order settings
   const [status, setStatus] = useState<OrderStatus>('confirmed');
   const [fulfillmentType, setFulfillmentType] = useState<'royal_express' | 'pickme' | 'pickup'>('royal_express');
@@ -119,7 +135,7 @@ export default function CreateOrder() {
   useEffect(() => {
     // Load products, districts, and past customer list in parallel
     adminGetAllProducts().then(ps => {
-      setProducts(ps.filter(p => !p.isPackaging && p.stock > 0));
+      setProducts(ps.filter(p => !p.isPackaging && (p.isStarterPack || p.stock > 0)));
       setPackagingProducts(ps.filter(p => p.isPackaging && p.stock > 0));
     });
 
@@ -212,6 +228,33 @@ export default function CreateOrder() {
         setDeliveryFee(fee);
       }
     }
+  }
+
+  // Reset pack editor when product selection changes
+  function selectProduct(p: Product | null) {
+    setSelectedProduct(p);
+    setInputValue('');
+    setSimpleQty(1);
+    setPackExpanded(false);
+    if (p?.isStarterPack) {
+      setPackLines(
+        (p.packComponents ?? []).map(c => ({
+          productId: c.productId,
+          name: c.name,
+          quantity: c.quantity,
+          unit: c.unit,
+        }))
+      );
+      setPackPrice(p.price);
+    }
+  }
+
+  // helper: base unit for a product (same logic as ProductForm)
+  function compUnit(p: Product): string {
+    if (!p.priceTiers?.length) return p.unit;
+    if (p.unit === 'kg') return 'g';
+    if (p.unit === 'L') return 'ml';
+    return p.unit;
   }
 
   // ── Tiered picker computed values ───────────────────────────────────────────
@@ -350,6 +393,7 @@ export default function CreateOrder() {
         price: i.price, quantity: i.quantity, unit: i.unit,
         image: i.product.images[0], decimalQty: i.decimalQty,
         tierBase: i.tierBase, category: i.product.category,
+        ...(i.packComponents ? { packComponents: i.packComponents } : {}),
       }));
       const pkgCartItems: CartItem[] = packagingItems.map(i => ({
         productId: i.product.id, cartKey: i.cartKey, name: i.product.name,
@@ -587,7 +631,7 @@ export default function CreateOrder() {
                   options={products}
                   getOptionLabel={p => p.name}
                   value={selectedProduct}
-                  onChange={(_, v) => { setSelectedProduct(v); setInputValue(''); setSimpleQty(1); }}
+                  onChange={(_, v) => selectProduct(v)}
                   renderInput={params => (
                     <TextField {...params} label="Search product" size="small" placeholder="Type to search…" />
                   )}
@@ -612,7 +656,166 @@ export default function CreateOrder() {
                 {/* Product picker panel */}
                 {selectedProduct && (
                   <Box sx={{ mb: 2, p: 2, bgcolor: '#F8F9FA', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                    {hasTiers ? (
+                    {selectedProduct.isStarterPack ? (
+                      /* ── Starter pack picker ── */
+                      <Box>
+                        {!packExpanded ? (
+                          /* Collapsed: show summary + action buttons */
+                          <Box>
+                            <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
+                              {selectedProduct.name} — LKR {selectedProduct.price.toLocaleString()}
+                            </Typography>
+                            {packLines.map((l, i) => (
+                              <Typography key={i} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                · {l.name} ({l.quantity} {l.unit})
+                              </Typography>
+                            ))}
+                            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1.5 }}>
+                              <Button size="small" variant="outlined" onClick={() => setPackExpanded(true)}>
+                                Customize
+                              </Button>
+                              <Button
+                                size="small" variant="contained" color="secondary" startIcon={<AddIcon />}
+                                onClick={() => {
+                                  setOrderItems(prev => [...prev, {
+                                    product: selectedProduct,
+                                    quantity: 1,
+                                    cartKey: `pack-${selectedProduct.id}`,
+                                    unit: 'pack',
+                                    price: packPrice,
+                                    decimalQty: false,
+                                    packComponents: packLines.map(l => ({ productId: l.productId, quantity: l.quantity })),
+                                    packLines: [...packLines],
+                                  }]);
+                                  selectProduct(null);
+                                }}
+                              >
+                                Add as Pack
+                              </Button>
+                            </Box>
+                          </Box>
+                        ) : (
+                          /* Expanded: inline component editor */
+                          <Box>
+                            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                              Customize Pack
+                            </Typography>
+
+                            {/* Component rows */}
+                            <Table size="small" sx={{ mb: 1.5 }}>
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
+                                  <TableCell>Item</TableCell>
+                                  <TableCell align="center">Qty</TableCell>
+                                  <TableCell sx={{ width: 40 }} />
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {packLines.map((line, i) => (
+                                  <TableRow key={i}>
+                                    <TableCell>
+                                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{line.name}</Typography>
+                                      <Typography variant="caption" color="text.secondary">{line.unit}</Typography>
+                                    </TableCell>
+                                    <TableCell align="center">
+                                      <TextField
+                                        type="number" size="small" value={line.quantity}
+                                        onChange={e => {
+                                          const v = parseFloat(e.target.value);
+                                          if (!isNaN(v) && v > 0)
+                                            setPackLines(prev => prev.map((l, idx) => idx === i ? { ...l, quantity: v } : l));
+                                        }}
+                                        slotProps={{ htmlInput: { min: 0.001, step: 'any', style: { width: 70, textAlign: 'center' } } }}
+                                        sx={{ width: 90 }}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <IconButton size="small" color="error"
+                                        onClick={() => setPackLines(prev => prev.filter((_, idx) => idx !== i))}>
+                                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+
+                            {/* Add component row */}
+                            <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <TextField
+                                select size="small" label="Add item" value={packNewCompId}
+                                onChange={e => setPackNewCompId(e.target.value)}
+                                sx={{ minWidth: 180 }}
+                              >
+                                <MenuItem value=""><em>Select…</em></MenuItem>
+                                {products.filter(p => !p.isStarterPack).map(p => (
+                                  <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                                ))}
+                              </TextField>
+                              <TextField
+                                type="number" size="small" label="Qty" value={packNewCompQty}
+                                onChange={e => setPackNewCompQty(e.target.value)}
+                                sx={{ width: 80 }}
+                                slotProps={{ htmlInput: { min: 0.001, step: 'any' } }}
+                              />
+                              <Button
+                                size="small" variant="outlined" startIcon={<AddIcon />}
+                                disabled={!packNewCompId}
+                                onClick={() => {
+                                  const p = products.find(x => x.id === packNewCompId);
+                                  if (!p) return;
+                                  const unit = compUnit(p);
+                                  const qty = parseFloat(packNewCompQty) || 1;
+                                  setPackLines(prev => {
+                                    const existing = prev.findIndex(l => l.productId === packNewCompId);
+                                    if (existing !== -1) return prev.map((l, i) => i === existing ? { ...l, quantity: l.quantity + qty } : l);
+                                    return [...prev, { productId: p.id!, name: p.name, quantity: qty, unit }];
+                                  });
+                                  setPackNewCompId('');
+                                  setPackNewCompQty('1');
+                                }}
+                              >
+                                Add
+                              </Button>
+                            </Box>
+
+                            {/* Pack price + actions */}
+                            <Divider sx={{ mb: 1.5 }} />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                              <TextField
+                                type="number" size="small" label="Pack Price (LKR)"
+                                value={packPrice}
+                                onChange={e => setPackPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                                slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                sx={{ width: 160 }}
+                              />
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button size="small" onClick={() => setPackExpanded(false)}>Collapse</Button>
+                                <Button
+                                  size="small" variant="contained" color="secondary" startIcon={<AddIcon />}
+                                  disabled={packLines.length === 0}
+                                  onClick={() => {
+                                    setOrderItems(prev => [...prev, {
+                                      product: selectedProduct,
+                                      quantity: 1,
+                                      cartKey: `pack-${selectedProduct.id}`,
+                                      unit: 'pack',
+                                      price: packPrice,
+                                      decimalQty: false,
+                                      packComponents: packLines.map(l => ({ productId: l.productId, quantity: l.quantity })),
+                                      packLines: [...packLines],
+                                    }]);
+                                    selectProduct(null);
+                                  }}
+                                >
+                                  Add to Order
+                                </Button>
+                              </Box>
+                            </Box>
+                          </Box>
+                        )}
+                      </Box>
+                    ) : hasTiers ? (
                       <>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                           Quick select
@@ -675,12 +878,14 @@ export default function CreateOrder() {
                         </Typography>
                       </Box>
                     )}
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
-                      <Button variant="contained" color="secondary" startIcon={<AddIcon />}
-                        onClick={addProduct} disabled={!canAdd}>
-                        Add to Order
-                      </Button>
-                    </Box>
+                    {!selectedProduct.isStarterPack && (
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
+                        <Button variant="contained" color="secondary" startIcon={<AddIcon />}
+                          onClick={addProduct} disabled={!canAdd}>
+                          Add to Order
+                        </Button>
+                      </Box>
+                    )}
                   </Box>
                 )}
 
@@ -713,7 +918,13 @@ export default function CreateOrder() {
                                   <Avatar src={item.product.images[0]} variant="rounded" sx={{ width: 28, height: 28, flexShrink: 0 }} />
                                   <Box>
                                     <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.3 }}>{item.product.name}</Typography>
-                                    <Typography variant="caption" color="text.secondary">{item.unit}</Typography>
+                                    {item.packLines?.length ? (
+                                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.4 }}>
+                                        {item.packLines.map(l => `${l.name} ×${l.quantity}${l.unit}`).join(' · ')}
+                                      </Typography>
+                                    ) : (
+                                      <Typography variant="caption" color="text.secondary">{item.unit}</Typography>
+                                    )}
                                   </Box>
                                 </Box>
                               </TableCell>
