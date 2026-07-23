@@ -132,10 +132,12 @@ export default function Products() {
                 <ProductCard
                   product={p}
                   packAvailable={p.isStarterPack
-                    ? (p.packComponents?.every(comp => {
-                        const cp = all.find(x => x.id === comp.productId);
-                        return cp !== undefined && cp.stock >= comp.quantity;
-                      }) ?? false)
+                    ? p.packType === 'selectable'
+                      ? (p.selectablePool ?? []).reduce((s, pid) => s + (all.find(x => x.id === pid)?.stock ?? 0), 0) >= (p.selectableCount ?? 1)
+                      : (p.packComponents?.every(comp => {
+                          const cp = all.find(x => x.id === comp.productId);
+                          return cp !== undefined && cp.stock >= comp.quantity;
+                        }) ?? false)
                     : undefined}
                 />
               </Grid>

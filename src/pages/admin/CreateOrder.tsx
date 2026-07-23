@@ -116,12 +116,16 @@ export default function CreateOrder() {
   const [citiesLoading, setCitiesLoading] = useState(false);
   const [selectedCity, setSelectedCity] = useState<CurfoxCity | null>(null);
 
-  // Pack customization (expanded inline editor)
+  // Pack customization (expanded inline editor — fixed packs)
   const [packExpanded, setPackExpanded] = useState(false);
   const [packLines, setPackLines] = useState<PackLine[]>([]);
   const [packPrice, setPackPrice] = useState(0);
   const [packNewCompId, setPackNewCompId] = useState('');
   const [packNewCompQty, setPackNewCompQty] = useState('1');
+
+  // Selectable pack state
+  const [selectableSelected, setSelectableSelected] = useState<Record<string, number>>({});
+  const [selectablePoolProducts, setSelectablePoolProducts] = useState<Product[]>([]);
 
   // Order settings
   const [status, setStatus] = useState<OrderStatus>('confirmed');
@@ -236,16 +240,24 @@ export default function CreateOrder() {
     setInputValue('');
     setSimpleQty(1);
     setPackExpanded(false);
+    setSelectableSelected({});
+    setSelectablePoolProducts([]);
     if (p?.isStarterPack) {
-      setPackLines(
-        (p.packComponents ?? []).map(c => ({
-          productId: c.productId,
-          name: c.name,
-          quantity: c.quantity,
-          unit: c.unit,
-        }))
-      );
       setPackPrice(p.price);
+      if (p.packType === 'selectable') {
+        const poolIds = p.selectablePool ?? [];
+        const poolProds = products.filter(x => poolIds.includes(x.id!));
+        setSelectablePoolProducts(poolProds);
+      } else {
+        setPackLines(
+          (p.packComponents ?? []).map(c => ({
+            productId: c.productId,
+            name: c.name,
+            quantity: c.quantity,
+            unit: c.unit,
+          }))
+        );
+      }
     }
   }
 
@@ -659,8 +671,110 @@ export default function CreateOrder() {
                     {selectedProduct.isStarterPack ? (
                       /* ── Starter pack picker ── */
                       <Box>
-                        {!packExpanded ? (
-                          /* Collapsed: show summary + action buttons */
+                        {selectedProduct.packType === 'selectable' ? (
+                          /* Selectable pack: color picker */
+                          (() => {
+                            const pickCount = selectedProduct.selectableCount ?? 1;
+                            const totalSel = Object.values(selectableSelected).reduce((s, v) => s + v, 0);
+                            const remSel = pickCount - totalSel;
+                            const canAddPack = totalSel === pickCount;
+
+                            function adjustSel(pid: string, delta: number) {
+                              setSelectableSelected(prev => {
+                                const cur = prev[pid] ?? 0;
+                                const pp = selectablePoolProducts.find(x => x.id === pid);
+                                const maxStock = pp?.stock ?? 0;
+                                const curTotal = Object.values(prev).reduce((s, v) => s + v, 0);
+                                const curRem = pickCount - curTotal;
+                                if (delta > 0 && (curRem <= 0 || cur >= maxStock)) return prev;
+                                if (delta < 0 && cur <= 0) return prev;
+                                const next = cur + delta;
+                                if (next <= 0) {
+                                  const { [pid]: _, ...rest } = prev;
+                                  return rest;
+                                }
+                                return { ...prev, [pid]: next };
+                              });
+                            }
+
+                            return (
+                              <Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                                    Pick any {pickCount} color{pickCount !== 1 ? 's' : ''}
+                                  </Typography>
+                                  <Box sx={{ px: 1, py: 0.25, borderRadius: 1.5, bgcolor: canAddPack ? '#D4EDDA' : totalSel > 0 ? `${GOLD}22` : 'grey.200' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: canAddPack ? '#155724' : totalSel > 0 ? '#7A5C2E' : 'text.secondary' }}>
+                                      {totalSel} / {pickCount}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+
+                                {selectablePoolProducts.map(pp => {
+                                  const qty = selectableSelected[pp.id!] ?? 0;
+                                  const outOfStock = pp.stock <= 0;
+                                  const canInc = !outOfStock && qty < pp.stock && remSel > 0;
+                                  return (
+                                    <Box key={pp.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', opacity: outOfStock ? 0.45 : 1, '&:last-child': { borderBottom: 0 } }}>
+                                      <Typography variant="body2" sx={{ flex: 1, fontWeight: qty > 0 ? 600 : 400 }}>{pp.name}</Typography>
+                                      <Typography variant="caption" color={outOfStock ? 'error' : 'text.secondary'} sx={{ mr: 0.5 }}>
+                                        {outOfStock ? 'OOS' : `${pp.stock} left`}
+                                      </Typography>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <IconButton size="small" disabled={qty <= 0 || outOfStock}
+                                          onClick={() => adjustSel(pp.id!, -1)} sx={{ width: 24, height: 24, border: '1px solid', borderColor: 'divider' }}>
+                                          <RemoveIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                        <Typography variant="body2" sx={{ fontWeight: 700, minWidth: 18, textAlign: 'center' }}>{qty}</Typography>
+                                        <IconButton size="small" disabled={!canInc}
+                                          onClick={() => adjustSel(pp.id!, 1)} sx={{ width: 24, height: 24, border: '1px solid', borderColor: canInc ? GOLD : 'divider' }}>
+                                          <AddIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                      </Box>
+                                    </Box>
+                                  );
+                                })}
+
+                                <Divider sx={{ mt: 1.5, mb: 1.5 }} />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                                  <TextField
+                                    type="number" size="small" label="Pack Price (LKR)"
+                                    value={packPrice}
+                                    onChange={e => setPackPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                                    slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                    sx={{ width: 160 }}
+                                  />
+                                  <Button
+                                    size="small" variant="contained" color="secondary" startIcon={<AddIcon />}
+                                    disabled={!canAddPack}
+                                    onClick={() => {
+                                      const lines: PackLine[] = Object.entries(selectableSelected)
+                                        .filter(([, qty]) => qty > 0)
+                                        .map(([pid, qty]) => {
+                                          const pp = selectablePoolProducts.find(x => x.id === pid)!;
+                                          return { productId: pid, name: pp.name, quantity: qty, unit: pp.unit };
+                                        });
+                                      setOrderItems(prev => [...prev, {
+                                        product: selectedProduct,
+                                        quantity: 1,
+                                        cartKey: `pack-${selectedProduct.id}`,
+                                        unit: 'pack',
+                                        price: packPrice,
+                                        decimalQty: false,
+                                        packComponents: lines.map(l => ({ productId: l.productId, quantity: l.quantity })),
+                                        packLines: lines,
+                                      }]);
+                                      selectProduct(null);
+                                    }}
+                                  >
+                                    Add to Order
+                                  </Button>
+                                </Box>
+                              </Box>
+                            );
+                          })()
+                        ) : !packExpanded ? (
+                          /* Fixed pack collapsed: show summary + action buttons */
                           <Box>
                             <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
                               {selectedProduct.name} — LKR {selectedProduct.price.toLocaleString()}
@@ -695,13 +809,12 @@ export default function CreateOrder() {
                             </Box>
                           </Box>
                         ) : (
-                          /* Expanded: inline component editor */
+                          /* Fixed pack expanded: inline component editor */
                           <Box>
                             <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                               Customize Pack
                             </Typography>
 
-                            {/* Component rows */}
                             <Table size="small" sx={{ mb: 1.5 }}>
                               <TableHead>
                                 <TableRow sx={{ '& th': { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
@@ -740,7 +853,6 @@ export default function CreateOrder() {
                               </TableBody>
                             </Table>
 
-                            {/* Add component row */}
                             <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
                               <TextField
                                 select size="small" label="Add item" value={packNewCompId}
@@ -779,7 +891,6 @@ export default function CreateOrder() {
                               </Button>
                             </Box>
 
-                            {/* Pack price + actions */}
                             <Divider sx={{ mb: 1.5 }} />
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                               <TextField

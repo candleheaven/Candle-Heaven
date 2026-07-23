@@ -55,7 +55,10 @@ interface FormState {
   lowStockThreshold: string;
   costPrice: string;  // buying cost in display unit (LKR/kg, LKR/piece, etc.)
   isStarterPack: boolean;
+  packType: 'fixed' | 'selectable';
   packComponents: PackFormComponent[];
+  selectablePool: string[];   // productIds in the selectable pool
+  selectableCount: string;    // how many items customer picks
 }
 
 const EMPTY_TIER: PriceTier = { label: '', qty: 1, inputUnit: 'g', price: 0, isBulk: false };
@@ -72,7 +75,10 @@ const EMPTY: FormState = {
   lowStockThreshold: '',
   costPrice: '',
   isStarterPack: false,
+  packType: 'fixed',
   packComponents: [],
+  selectablePool: [],
+  selectableCount: '1',
 };
 
 // Unit label to use for pack component quantity entry
@@ -95,6 +101,7 @@ export default function ProductForm() {
   const [error, setError] = useState('');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [newCompProductId, setNewCompProductId] = useState('');
+  const [newPoolProductId, setNewPoolProductId] = useState('');
 
   useEffect(() => {
     adminGetAllProducts().then(products => {
@@ -131,6 +138,7 @@ export default function ProductForm() {
               return parseFloat((p.averageCost * m).toFixed(4)).toString();
             })(),
             isStarterPack: p.isStarterPack ?? false,
+            packType: p.packType ?? 'fixed',
             packComponents: (p.packComponents ?? []).map(c => ({
               productId: c.productId,
               name: c.name,
@@ -138,6 +146,8 @@ export default function ProductForm() {
               unit: c.unit,
               retailPrice: c.retailPrice.toString(),
             })),
+            selectablePool: p.selectablePool ?? [],
+            selectableCount: (p.selectableCount ?? 1).toString(),
           });
         }
       }
@@ -174,10 +184,16 @@ export default function ProductForm() {
     if (isNaN(price) || price <= 0) return 'Enter a valid price.';
 
     if (form.isStarterPack) {
-      if (form.packComponents.length === 0) return 'Add at least one component to the starter pack.';
-      for (const [i, c] of form.packComponents.entries()) {
-        if (!c.productId) return `Component ${i + 1}: select a product.`;
-        if (!parseFloat(c.quantity) || parseFloat(c.quantity) <= 0) return `Component ${i + 1}: enter a valid quantity.`;
+      if (form.packType === 'selectable') {
+        if (form.selectablePool.length === 0) return 'Add at least one product to the color pool.';
+        const count = parseInt(form.selectableCount, 10);
+        if (isNaN(count) || count < 1) return 'Pick count must be at least 1.';
+      } else {
+        if (form.packComponents.length === 0) return 'Add at least one component to the starter pack.';
+        for (const [i, c] of form.packComponents.entries()) {
+          if (!c.productId) return `Component ${i + 1}: select a product.`;
+          if (!parseFloat(c.quantity) || parseFloat(c.quantity) <= 0) return `Component ${i + 1}: enter a valid quantity.`;
+        }
       }
       return '';
     }
@@ -216,15 +232,16 @@ export default function ProductForm() {
         : parseFloat(form.price);
     const baseUnit = form.isStarterPack ? 'pack' : isTiered ? form.stockUnit : form.unit.trim();
 
-    const packComponents: PackComponent[] | undefined = form.isStarterPack
-      ? form.packComponents.map(c => ({
-          productId: c.productId,
-          name: c.name,
-          quantity: parseFloat(c.quantity) || 0,
-          unit: c.unit,
-          retailPrice: parseFloat(c.retailPrice) || 0,
-        }))
-      : undefined;
+    const packComponents: PackComponent[] | undefined =
+      form.isStarterPack && form.packType === 'fixed'
+        ? form.packComponents.map(c => ({
+            productId: c.productId,
+            name: c.name,
+            quantity: parseFloat(c.quantity) || 0,
+            unit: c.unit,
+            retailPrice: parseFloat(c.retailPrice) || 0,
+          }))
+        : undefined;
 
     const product: Omit<Product, 'id'> = {
       name: form.name.trim(),
@@ -252,7 +269,10 @@ export default function ProductForm() {
         return parseFloat((parseFloat(form.costPrice) / m).toFixed(6));
       })(),
       isStarterPack: form.isStarterPack || undefined,
+      packType: form.isStarterPack ? form.packType : undefined,
       packComponents,
+      selectablePool: (form.isStarterPack && form.packType === 'selectable') ? form.selectablePool : undefined,
+      selectableCount: (form.isStarterPack && form.packType === 'selectable') ? parseInt(form.selectableCount, 10) : undefined,
     };
 
     try {
@@ -326,6 +346,7 @@ export default function ProductForm() {
                         isStarterPack: e.target.checked,
                         category: e.target.checked ? 'kits' : f.category,
                         pricingMode: 'simple',
+                        packType: 'fixed',
                       }))}
                     />
                   }
@@ -340,116 +361,194 @@ export default function ProductForm() {
                 />
               </Grid>
 
-              {/* Pack component builder */}
+              {/* Pack type + builder */}
               {form.isStarterPack && (
                 <Grid size={{ xs: 12 }}>
                   <Divider sx={{ mb: 2 }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>Pack Components</Typography>
 
-                  {form.packComponents.length > 0 && (
-                    <Box sx={{ overflowX: 'auto', mb: 1.5 }}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
-                            <TableCell>Product</TableCell>
-                            <TableCell>Qty</TableCell>
-                            <TableCell>Unit</TableCell>
-                            <TableCell>Retail Price (LKR)</TableCell>
-                            <TableCell />
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {form.packComponents.map((comp, i) => (
-                            <TableRow key={i}>
-                              <TableCell>
-                                <Typography variant="body2" sx={{ fontWeight: 500 }}>{comp.name}</Typography>
-                              </TableCell>
-                              <TableCell>
-                                <TextField
-                                  size="small" type="number" value={comp.quantity}
-                                  onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, quantity: e.target.value } : c) }))}
-                                  slotProps={{ htmlInput: { min: 0, step: 'any' } }}
-                                  sx={{ width: 90 }}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="body2" color="text.secondary">{comp.unit}</Typography>
-                              </TableCell>
-                              <TableCell>
-                                <TextField
-                                  size="small" type="number" value={comp.retailPrice}
-                                  onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, retailPrice: e.target.value } : c) }))}
-                                  slotProps={{ htmlInput: { min: 0, step: 'any' } }}
-                                  sx={{ width: 110 }}
-                                  helperText="for savings calc"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <IconButton size="small" color="error"
-                                  onClick={() => setForm(f => ({ ...f, packComponents: f.packComponents.filter((_, idx) => idx !== i) }))}>
-                                  <DeleteOutlineIcon fontSize="small" />
+                  {/* Pack type toggle */}
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>Pack Type</Typography>
+                    <ToggleButtonGroup
+                      exclusive
+                      value={form.packType}
+                      onChange={(_, v) => v && setForm(f => ({ ...f, packType: v }))}
+                      size="small"
+                    >
+                      <ToggleButton value="fixed">Fixed Contents</ToggleButton>
+                      <ToggleButton value="selectable">Customer Picks Colors</ToggleButton>
+                    </ToggleButtonGroup>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      {form.packType === 'fixed'
+                        ? 'Pack has fixed pre-defined contents'
+                        : 'Customer selects N items from a pool of products'}
+                    </Typography>
+                  </Box>
+
+                  {form.packType === 'fixed' ? (
+                    /* ── Fixed pack component table ── */
+                    <>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>Pack Components</Typography>
+
+                      {form.packComponents.length > 0 && (
+                        <Box sx={{ overflowX: 'auto', mb: 1.5 }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' } }}>
+                                <TableCell>Product</TableCell>
+                                <TableCell>Qty</TableCell>
+                                <TableCell>Unit</TableCell>
+                                <TableCell>Retail Price (LKR)</TableCell>
+                                <TableCell />
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {form.packComponents.map((comp, i) => (
+                                <TableRow key={i}>
+                                  <TableCell>
+                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{comp.name}</Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <TextField
+                                      size="small" type="number" value={comp.quantity}
+                                      onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, quantity: e.target.value } : c) }))}
+                                      slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                      sx={{ width: 90 }}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2" color="text.secondary">{comp.unit}</Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <TextField
+                                      size="small" type="number" value={comp.retailPrice}
+                                      onChange={e => setForm(f => ({ ...f, packComponents: f.packComponents.map((c, idx) => idx === i ? { ...c, retailPrice: e.target.value } : c) }))}
+                                      slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+                                      sx={{ width: 110 }}
+                                      helperText="for savings calc"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <IconButton size="small" color="error"
+                                      onClick={() => setForm(f => ({ ...f, packComponents: f.packComponents.filter((_, idx) => idx !== i) }))}>
+                                      <DeleteOutlineIcon fontSize="small" />
+                                    </IconButton>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </Box>
+                      )}
+
+                      {form.packComponents.length > 0 && (() => {
+                        const retailSum = form.packComponents.reduce((s, c) => s + (parseFloat(c.retailPrice) || 0), 0);
+                        const packPrice = parseFloat(form.price) || 0;
+                        const savings = retailSum - packPrice;
+                        return savings > 0 ? (
+                          <Typography variant="caption" sx={{ color: 'success.main', display: 'block', mb: 1.5 }}>
+                            Savings for customer: LKR {savings.toLocaleString()} vs. buying separately
+                          </Typography>
+                        ) : null;
+                      })()}
+
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <TextField
+                          select size="small" label="Add component" value={newCompProductId}
+                          onChange={e => setNewCompProductId(e.target.value)}
+                          sx={{ minWidth: 220 }}
+                        >
+                          <MenuItem value=""><em>Select a product…</em></MenuItem>
+                          {allProducts
+                            .filter(p => !p.isStarterPack && p.id !== id)
+                            .map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)
+                          }
+                        </TextField>
+                        <Button
+                          size="small" variant="outlined" startIcon={<AddIcon />}
+                          disabled={!newCompProductId}
+                          onClick={() => {
+                            const p = allProducts.find(x => x.id === newCompProductId);
+                            if (!p) return;
+                            const unit = getComponentUnit(p);
+                            setForm(f => ({
+                              ...f,
+                              packComponents: [...f.packComponents, {
+                                productId: p.id!,
+                                name: p.name,
+                                quantity: '1',
+                                unit,
+                                retailPrice: p.price.toString(),
+                              }],
+                            }));
+                            setNewCompProductId('');
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </Box>
+                    </>
+                  ) : (
+                    /* ── Selectable pack pool builder ── */
+                    <>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Color Pool</Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" color="text.secondary">Customer picks</Typography>
+                          <TextField
+                            type="number" size="small" value={form.selectableCount}
+                            onChange={e => setForm(f => ({ ...f, selectableCount: e.target.value }))}
+                            slotProps={{ htmlInput: { min: 1, step: 1, style: { width: 44, textAlign: 'center' } } }}
+                            sx={{ width: 64 }}
+                          />
+                          <Typography variant="body2" color="text.secondary">color(s) from this pool</Typography>
+                        </Box>
+                      </Box>
+
+                      {form.selectablePool.length > 0 && (
+                        <Box sx={{ mb: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {form.selectablePool.map(pid => {
+                            const p = allProducts.find(x => x.id === pid);
+                            return p ? (
+                              <Box key={pid} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.5, bgcolor: '#F0F4FF', borderRadius: 2, border: '1px solid', borderColor: 'primary.100' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>{p.name}</Typography>
+                                <IconButton size="small"
+                                  onClick={() => setForm(f => ({ ...f, selectablePool: f.selectablePool.filter(x => x !== pid) }))}
+                                  sx={{ p: 0.25 }}>
+                                  <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                                 </IconButton>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </Box>
+                              </Box>
+                            ) : null;
+                          })}
+                        </Box>
+                      )}
+
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <TextField
+                          select size="small" label="Add to pool" value={newPoolProductId}
+                          onChange={e => setNewPoolProductId(e.target.value)}
+                          sx={{ minWidth: 220 }}
+                        >
+                          <MenuItem value=""><em>Select a product…</em></MenuItem>
+                          {allProducts
+                            .filter(p => !p.isStarterPack && p.id !== id && !form.selectablePool.includes(p.id!))
+                            .map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)
+                          }
+                        </TextField>
+                        <Button
+                          size="small" variant="outlined" startIcon={<AddIcon />}
+                          disabled={!newPoolProductId}
+                          onClick={() => {
+                            setForm(f => ({ ...f, selectablePool: [...f.selectablePool, newPoolProductId] }));
+                            setNewPoolProductId('');
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </Box>
+                    </>
                   )}
 
-                  {/* Computed savings */}
-                  {form.packComponents.length > 0 && (() => {
-                    const retailSum = form.packComponents.reduce((s, c) => s + (parseFloat(c.retailPrice) || 0), 0);
-                    const packPrice = parseFloat(form.price) || 0;
-                    const savings = retailSum - packPrice;
-                    return savings > 0 ? (
-                      <Typography variant="caption" sx={{ color: 'success.main', display: 'block', mb: 1.5 }}>
-                        Savings for customer: LKR {savings.toLocaleString()} vs. buying separately
-                      </Typography>
-                    ) : null;
-                  })()}
-
-                  {/* Add component row */}
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <TextField
-                      select
-                      size="small"
-                      label="Add component"
-                      value={newCompProductId}
-                      onChange={e => setNewCompProductId(e.target.value)}
-                      sx={{ minWidth: 220 }}
-                    >
-                      <MenuItem value=""><em>Select a product…</em></MenuItem>
-                      {allProducts
-                        .filter(p => !p.isStarterPack && p.id !== id)
-                        .map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)
-                      }
-                    </TextField>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<AddIcon />}
-                      disabled={!newCompProductId}
-                      onClick={() => {
-                        const p = allProducts.find(x => x.id === newCompProductId);
-                        if (!p) return;
-                        const unit = getComponentUnit(p);
-                        setForm(f => ({
-                          ...f,
-                          packComponents: [...f.packComponents, {
-                            productId: p.id!,
-                            name: p.name,
-                            quantity: '1',
-                            unit,
-                            retailPrice: p.price.toString(),
-                          }],
-                        }));
-                        setNewCompProductId('');
-                      }}
-                    >
-                      Add
-                    </Button>
-                  </Box>
                   <Divider sx={{ mt: 2 }} />
                 </Grid>
               )}

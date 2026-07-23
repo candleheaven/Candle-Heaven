@@ -32,7 +32,10 @@ export interface Product {
   allowDecimal?: boolean;  // Allow fractional quantities (wax, fragrances, etc.)
   weightGrams?: number;    // Weight per unit in grams (for simple products; tiered products use qty as weight)
   isStarterPack?: boolean;
-  packComponents?: PackComponent[];
+  packType?: 'fixed' | 'selectable';
+  packComponents?: PackComponent[];     // fixed packs only
+  selectablePool?: string[];            // selectable packs: eligible productIds
+  selectableCount?: number;             // selectable packs: how many items the customer picks
 }
 
 export interface CartItem {

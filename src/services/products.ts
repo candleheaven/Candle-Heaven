@@ -53,8 +53,11 @@ function toProduct(snap: QueryDocumentSnapshot<DocumentData>): Product {
     ...(d.weightGrams  && { weightGrams: d.weightGrams }),
     ...(d.averageCost        !== undefined && { averageCost: d.averageCost }),
     ...(d.lowStockThreshold  !== undefined && { lowStockThreshold: d.lowStockThreshold }),
-    ...(d.isStarterPack  && { isStarterPack: d.isStarterPack }),
-    ...(d.packComponents && { packComponents: d.packComponents }),
+    ...(d.isStarterPack   && { isStarterPack: d.isStarterPack }),
+    ...(d.packType        && { packType: d.packType }),
+    ...(d.packComponents  && { packComponents: d.packComponents }),
+    ...(d.selectablePool  && { selectablePool: d.selectablePool }),
+    ...(d.selectableCount !== undefined && { selectableCount: d.selectableCount }),
   };
 }
 

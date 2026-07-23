@@ -512,6 +512,154 @@ function PackSelector({ product }: { product: Product }) {
   );
 }
 
+// ─── Selectable Pack selector ─────────────────────────────────────────────────
+
+function SelectablePackSelector({ product }: { product: Product }) {
+  const { addItem, openCart } = useCart();
+  const [poolProducts, setPoolProducts] = useState<Product[]>([]);
+  const [selected, setSelected] = useState<Record<string, number>>({});
+  const [added, setAdded] = useState(false);
+
+  const pool = product.selectablePool ?? [];
+  const pickCount = product.selectableCount ?? 1;
+
+  useEffect(() => {
+    if (pool.length) getProductsByIds(pool).then(setPoolProducts);
+  }, [product.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalSelected = Object.values(selected).reduce((s, v) => s + v, 0);
+  const remaining = pickCount - totalSelected;
+  const canAdd = totalSelected === pickCount;
+
+  function adjust(productId: string, delta: number) {
+    setSelected(prev => {
+      const cur = prev[productId] ?? 0;
+      const pp = poolProducts.find(x => x.id === productId);
+      const maxStock = pp?.stock ?? 0;
+      if (delta > 0 && (remaining <= 0 || cur >= maxStock)) return prev;
+      if (delta < 0 && cur <= 0) return prev;
+      const next = cur + delta;
+      if (next <= 0) {
+        const { [productId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [productId]: next };
+    });
+  }
+
+  function handleAdd() {
+    const components = Object.entries(selected)
+      .filter(([, qty]) => qty > 0)
+      .map(([productId, quantity]) => ({ productId, quantity }));
+    addItem({
+      productId: product.id,
+      cartKey: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: 1,
+      unit: 'pack',
+      image: product.images?.[0],
+      decimalQty: false,
+      minQty: 1,
+      maxCartQty: 1,
+      category: product.category,
+      packComponents: components,
+    });
+    setAdded(true);
+    setTimeout(() => setAdded(false), 3000);
+  }
+
+  const isAvailable = pool.length > 0 && poolProducts.some(p => p.stock > 0);
+
+  return (
+    <Box>
+      <Box sx={{ mb: 2.5, p: 2, bgcolor: '#F9F7F4', borderRadius: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary' }}>
+            Pick any {pickCount} color{pickCount !== 1 ? 's' : ''}
+          </Typography>
+          <Box sx={{ px: 1.25, py: 0.25, borderRadius: 2, bgcolor: canAdd ? '#D4EDDA' : totalSelected > 0 ? `${GOLD}22` : 'grey.200' }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: canAdd ? '#155724' : totalSelected > 0 ? '#7A5C2E' : 'text.secondary' }}>
+              {totalSelected} / {pickCount} selected
+            </Typography>
+          </Box>
+        </Box>
+
+        {poolProducts.map(pp => {
+          const qty = selected[pp.id] ?? 0;
+          const outOfStock = pp.stock <= 0;
+          const atStockLimit = qty >= pp.stock;
+          const canIncrease = !outOfStock && !atStockLimit && remaining > 0;
+
+          return (
+            <Box key={pp.id} sx={{
+              display: 'flex', alignItems: 'center', gap: 1.5, py: 1,
+              borderBottom: '1px solid', borderColor: 'divider',
+              opacity: outOfStock ? 0.45 : 1,
+              '&:last-child': { borderBottom: 0 },
+            }}>
+              <Box component="img" src={pp.images?.[0] || '/placeholder-product.jpg'} alt={pp.name}
+                sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0, bgcolor: 'grey.100' }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>{pp.name}</Typography>
+                <Typography variant="caption" color={outOfStock ? 'error' : 'text.secondary'}>
+                  {outOfStock ? 'Out of stock' : `${pp.stock} in stock`}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
+                <Box
+                  onClick={() => !outOfStock && adjust(pp.id, -1)}
+                  sx={{
+                    width: 28, height: 28, borderRadius: 1, border: '1.5px solid',
+                    borderColor: qty > 0 ? GOLD : 'divider',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: qty > 0 && !outOfStock ? 'pointer' : 'not-allowed',
+                    opacity: qty > 0 ? 1 : 0.35,
+                    '&:hover': qty > 0 && !outOfStock ? { bgcolor: `${GOLD}15` } : {},
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1, userSelect: 'none' }}>−</Typography>
+                </Box>
+                <Typography variant="body2" sx={{ fontWeight: 700, minWidth: 20, textAlign: 'center' }}>{qty}</Typography>
+                <Box
+                  onClick={() => canIncrease && adjust(pp.id, 1)}
+                  sx={{
+                    width: 28, height: 28, borderRadius: 1, border: '1.5px solid',
+                    borderColor: canIncrease ? GOLD : 'divider',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: canIncrease ? 'pointer' : 'not-allowed',
+                    opacity: canIncrease ? 1 : 0.35,
+                    '&:hover': canIncrease ? { bgcolor: `${GOLD}15` } : {},
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1, userSelect: 'none' }}>+</Typography>
+                </Box>
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+
+      {added && (
+        <Alert severity="success" sx={{ mb: 2 }} action={<Button size="small" onClick={openCart}>View Cart</Button>}>
+          Added to cart!
+        </Alert>
+      )}
+
+      {isAvailable ? (
+        <Button variant="contained" size="large" fullWidth startIcon={<AddShoppingCartIcon />}
+          disabled={!canAdd} onClick={handleAdd} sx={{ py: 1.5 }}>
+          {canAdd ? `Add to Cart — LKR ${product.price.toLocaleString()}` : `Select ${remaining} more color${remaining !== 1 ? 's' : ''}`}
+        </Button>
+      ) : (
+        <Button variant="contained" size="large" fullWidth disabled sx={{ py: 1.5 }}>
+          Out of Stock
+        </Button>
+      )}
+    </Box>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProductDetail() {
@@ -671,7 +819,9 @@ export default function ProductDetail() {
           <Divider sx={{ mb: 3 }} />
 
           {isPack ? (
-            <PackSelector product={product} />
+            product.packType === 'selectable'
+              ? <SelectablePackSelector product={product} />
+              : <PackSelector product={product} />
           ) : inStock ? (
             hasTiers ? (
               <TieredSelector product={product} onAddToCart={addItem} />
