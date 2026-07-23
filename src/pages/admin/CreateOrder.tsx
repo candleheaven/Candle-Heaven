@@ -12,6 +12,7 @@ import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 import { DeleteOutlined as DeleteOutlineIcon } from '@mui/icons-material';
+import { EditOutlined as EditOutlineIcon } from '@mui/icons-material';
 import { adminGetAllProducts, adminGetAllOrders, adminPlaceOrder } from '../../services/admin';
 import { getStates, getCitiesByState } from '../../services/cities';
 import type { CurfoxState, CurfoxCity } from '../../services/cities';
@@ -361,6 +362,25 @@ export default function CreateOrder() {
 
   function removeItem(cartKey: string) {
     setOrderItems(prev => prev.filter(i => i.cartKey !== cartKey));
+  }
+
+  function editPackItem(item: OrderItem) {
+    setOrderItems(prev => prev.filter(i => i.cartKey !== item.cartKey));
+    setPackExpanded(false);
+    setSelectableSelected({});
+    setSelectablePoolProducts([]);
+    setPackPrice(item.price);
+
+    if (item.product.packType === 'selectable') {
+      const sel: Record<string, number> = {};
+      for (const comp of item.packComponents ?? []) sel[comp.productId] = comp.quantity;
+      setSelectableSelected(sel);
+      const poolIds = item.product.selectablePool ?? [];
+      setSelectablePoolProducts(products.filter(x => poolIds.includes(x.id!)));
+    } else {
+      setPackLines(item.packLines ?? []);
+    }
+    setSelectedProduct(item.product);
   }
 
   function addPackaging() {
@@ -1080,7 +1100,12 @@ export default function CreateOrder() {
                               <TableCell align="right" sx={{ fontWeight: 700, whiteSpace: 'nowrap', fontSize: 13 }}>
                                 {lineTotal % 1 === 0 ? lineTotal.toLocaleString() : lineTotal.toFixed(2)}
                               </TableCell>
-                              <TableCell padding="checkbox">
+                              <TableCell padding="checkbox" sx={{ whiteSpace: 'nowrap' }}>
+                                {item.product.isStarterPack && (
+                                  <IconButton size="small" onClick={() => editPackItem(item)} sx={{ color: 'text.secondary' }}>
+                                    <EditOutlineIcon sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                )}
                                 <IconButton size="small" color="error" onClick={() => removeItem(item.cartKey)}>
                                   <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                                 </IconButton>
