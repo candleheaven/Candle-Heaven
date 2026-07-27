@@ -844,6 +844,15 @@ export interface ProfitAnalytics {
 }
 
 function orderItemCOGS(item: CartItem, productMap: Map<string, Product>): number {
+  // For pack items (fixed or selectable), sum actual component costs
+  if (item.packComponents?.length) {
+    const componentCOGS = item.packComponents.reduce((s, comp) => {
+      const cp = productMap.get(comp.productId);
+      const cost = cp?.averageCost ?? (cp?.price ?? 0) * 0.40;
+      return s + comp.quantity * cost;
+    }, 0);
+    return item.quantity * componentCOGS;
+  }
   const p = productMap.get(item.productId);
   const cost = p?.averageCost ?? (p?.price ?? item.price) * 0.40;
   const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
@@ -1180,10 +1189,7 @@ export async function getOrderProfitBreakdown(order: AdminOrder): Promise<OrderP
   const productMap = new Map(products.map(p => [p.id, p]));
 
   const itemBreakdown = order.items.map(item => {
-    const p = productMap.get(item.productId);
-    const cost = p?.averageCost ?? (p?.price ?? item.price) * 0.40;
-    const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
-    const cogs = baseUnits * cost;
+    const cogs = orderItemCOGS(item, productMap);
     const revenue = item.price * item.quantity;
     return {
       name: item.name, unit: item.unit, quantity: item.quantity,
@@ -1192,10 +1198,8 @@ export async function getOrderProfitBreakdown(order: AdminOrder): Promise<OrderP
   });
 
   const packagingBreakdown = (order.packagingItems ?? []).map(item => {
-    const p = productMap.get(item.productId);
-    const cost = p?.averageCost ?? (p?.price ?? item.price) * 0.40;
-    const baseUnits = item.tierBase ? item.quantity * item.tierBase : item.quantity;
-    return { name: item.name, unit: item.unit, quantity: item.quantity, cogs: Math.round(baseUnits * cost) };
+    const cogs = orderItemCOGS(item, productMap);
+    return { name: item.name, unit: item.unit, quantity: item.quantity, cogs: Math.round(cogs) };
   });
 
   const totalCOGS = [...itemBreakdown.map(i => i.cogs), ...packagingBreakdown.map(i => i.cogs)].reduce((s, v) => s + v, 0);

@@ -502,6 +502,7 @@ export default function OrderList() {
     };
     setDetailOrder(updated);
     setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
+    setProfitBreakdown(null);  // stale — recalculate next time panel is opened
     setEditingItems(false);
     setSavingItems(false);
     setSuccessMsg(`Items updated for ${detailOrder.orderNumber}`);
