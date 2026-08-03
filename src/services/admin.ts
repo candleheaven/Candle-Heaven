@@ -369,6 +369,7 @@ export async function adminUpdateOrderItems(
   newPackagingItems: CartItem[],
   newSubtotal: number,
   newTotal: number,
+  newDeliveryFee?: number,
 ): Promise<void> {
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
@@ -384,6 +385,7 @@ export async function adminUpdateOrderItems(
       JSON.stringify(orders.map(o => {
         if (o.id !== orderId) return o;
         const updated = { ...o, items: newItems, subtotal: newSubtotal, total: newTotal } as AdminOrder;
+        if (newDeliveryFee !== undefined) updated.deliveryFee = newDeliveryFee;
         if (newPackagingItems.length > 0) updated.packagingItems = newPackagingItems;
         else delete updated.packagingItems;
         return updated;
@@ -396,6 +398,7 @@ export async function adminUpdateOrderItems(
     packagingItems: newPackagingItems.length > 0 ? newPackagingItems : null,
     subtotal: newSubtotal,
     total: newTotal,
+    ...(newDeliveryFee !== undefined && { deliveryFee: newDeliveryFee }),
   });
 }
 

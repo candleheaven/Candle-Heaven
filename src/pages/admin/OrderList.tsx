@@ -225,6 +225,7 @@ export default function OrderList() {
   const [editingItems, setEditingItems] = useState(false);
   const [editItems, setEditItems] = useState<CartItem[]>([]);
   const [editPackagingItems, setEditPackagingItems] = useState<CartItem[]>([]);
+  const [editDeliveryFee, setEditDeliveryFee] = useState(0);
   const [savingItems, setSavingItems] = useState(false);
   const [editProducts, setEditProducts] = useState<Product[]>([]);
   const [editPkgProducts, setEditPkgProducts] = useState<Product[]>([]);
@@ -471,6 +472,7 @@ export default function OrderList() {
     if (!detailOrder) return;
     setEditItems([...detailOrder.items]);
     setEditPackagingItems([...(detailOrder.packagingItems ?? [])]);
+    setEditDeliveryFee(detailOrder.deliveryFee ?? 0);
     setAddItemProduct(null); setAddItemInputValue(''); setAddItemSimpleQty(1);
     setAddPkgProduct(null); setAddPkgQty(1);
     if (editProducts.length === 0) {
@@ -489,15 +491,15 @@ export default function OrderList() {
     if (!detailOrder) return;
     setSavingItems(true);
     const newSubtotal = editItems.reduce((s, i) => s + i.price * i.quantity, 0);
-    const deliveryFee = detailOrder.deliveryFee ?? 0;
     const promoDiscount = detailOrder.promoDiscount ?? 0;
-    const newTotal = Math.max(0, newSubtotal + deliveryFee - promoDiscount);
-    await adminUpdateOrderItems(detailOrder.id, editItems, editPackagingItems, newSubtotal, newTotal);
+    const newTotal = Math.max(0, newSubtotal + editDeliveryFee - promoDiscount);
+    await adminUpdateOrderItems(detailOrder.id, editItems, editPackagingItems, newSubtotal, newTotal, editDeliveryFee);
     const updated: AdminOrder = {
       ...detailOrder,
       items: editItems,
       packagingItems: editPackagingItems.length > 0 ? editPackagingItems : undefined,
       subtotal: newSubtotal,
+      deliveryFee: editDeliveryFee,
       total: newTotal,
     };
     setDetailOrder(updated);
@@ -842,6 +844,22 @@ export default function OrderList() {
                         <TableCell colSpan={3} align="right" sx={{ fontWeight: 700, border: 0, pt: 1 }}>Subtotal</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, color: NAVY, border: 0, pt: 1 }}>
                           {formatCurrency(editItems.reduce((s, i) => s + i.price * i.quantity, 0))}
+                        </TableCell>
+                        <TableCell sx={{ border: 0 }} />
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={3} align="right" sx={{ border: 0, color: 'text.secondary', fontSize: 13 }}>Delivery Fee</TableCell>
+                        <TableCell align="right" sx={{ border: 0 }}>
+                          <TextField
+                            type="number" size="small" value={editDeliveryFee || ''}
+                            onChange={e => setEditDeliveryFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                            placeholder="0"
+                            slotProps={{
+                              input: { startAdornment: <InputAdornment position="start"><Typography variant="caption" color="text.secondary">LKR</Typography></InputAdornment> },
+                              htmlInput: { min: 0, step: 50, style: { textAlign: 'right', padding: '4px 6px', width: 70 } },
+                            }}
+                            sx={{ width: 120 }}
+                          />
                         </TableCell>
                         <TableCell sx={{ border: 0 }} />
                       </TableRow>
