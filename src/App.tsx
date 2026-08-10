@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import theme from './theme/theme';
 import { CartProvider } from './context/CartContext';
 import { AuthProvider } from './context/AuthContext';
@@ -29,8 +30,15 @@ import PromotionForm from './pages/admin/PromotionForm';
 import PickupTicket from './pages/admin/PickupTicket';
 import Purchases from './pages/admin/Purchases';
 import Settlements from './pages/admin/Settlements';
+import { recordVisit } from './services/siteAnalytics';
 
 function CustomerLayout() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const isTracking = pathname.startsWith('/track');
+    recordVisit(isTracking ? 'tracking' : 'shop');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header />

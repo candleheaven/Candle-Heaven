@@ -17,6 +17,8 @@ import {
 } from 'recharts';
 import InventoryIcon from '@mui/icons-material/Inventory2';
 import { getAnalytics, getProfitAnalytics, getMonthlyStats, type AnalyticsData, type ProfitAnalytics, type StockValueEntry, type MonthlyStats } from '../../services/admin';
+import { getVisitStats, type VisitStats } from '../../services/siteAnalytics';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 
 const GOLD = '#C9A96E';
 const NAVY = '#132040';
@@ -86,14 +88,16 @@ export default function Dashboard() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [profitData, setProfitData] = useState<ProfitAnalytics | null>(null);
   const [monthly, setMonthly] = useState<MonthlyStats[]>([]);
+  const [visits, setVisits] = useState<VisitStats | null>(null);
   const [loading, setLoading] = useState(true);
   const theme = useTheme();
 
   useEffect(() => {
-    Promise.all([getAnalytics(), getProfitAnalytics(), getMonthlyStats(6)]).then(([d, p, m]) => {
+    Promise.all([getAnalytics(), getProfitAnalytics(), getMonthlyStats(6), getVisitStats()]).then(([d, p, m, v]) => {
       setData(d);
       setProfitData(p);
       setMonthly(m);
+      setVisits(v);
       setLoading(false);
     });
   }, []);
@@ -151,6 +155,24 @@ export default function Dashboard() {
             icon={<WarningAmberIcon />}
             color={data.lowStockCount > 0 ? '#F44336' : '#4CAF50'}
             note="Products with stock < 20"
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <StatCard
+            label="Shop Visits Today"
+            value={visits?.shopToday ?? '—'}
+            icon={<VisibilityIcon />}
+            color="#00BCD4"
+            note={`${visits?.shopTotal ?? '—'} all-time`}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <StatCard
+            label="Tracking Visits Today"
+            value={visits?.trackingToday ?? '—'}
+            icon={<VisibilityIcon />}
+            color="#9C27B0"
+            note={`${visits?.trackingTotal ?? '—'} all-time`}
           />
         </Grid>
       </Grid>
