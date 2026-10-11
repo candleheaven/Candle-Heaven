@@ -18,7 +18,7 @@ import {
   adminCreateCourierInvoice, adminMarkInvoiceCompleted, adminUpdateInvoiceAmount,
   type AdminOrder,
 } from '../../services/admin';
-import type { Settlement, PaymentMethod } from '../../types';
+import type { Settlement, PaymentMethod, OrderStatus } from '../../types';
 
 const NAVY = '#132040';
 
@@ -53,6 +53,19 @@ function prepaidAmount(order: AdminOrder): number {
   const info = order.paymentInfo;
   if (!info || info.method === 'courier_invoice') return 0;
   return info.amount ?? 0;
+}
+
+// Parcel came back — the courier collected nothing, but still bills for shipping.
+const NOT_COLLECTED: Set<OrderStatus> = new Set(['returned', 'cancelled']);
+
+/**
+ * What the courier actually collects as COD for this order.
+ * Zero for returned / cancelled parcels; otherwise the order total less
+ * anything already paid by cash or bank.
+ */
+function collectableCod(order: AdminOrder): number {
+  if (NOT_COLLECTED.has(order.status)) return 0;
+  return order.total - prepaidAmount(order);
 }
 
 // ── Balance indicator ─────────────────────────────────────────────────────────
@@ -94,7 +107,11 @@ function CourierInvoiceRow({
   const hasOrders = orders && orders.length > 0;
   const totalOrderValue = orders ? orders.reduce((s, o) => s + o.total, 0) : 0;
   const totalPrepaid = orders ? orders.reduce((s, o) => s + prepaidAmount(o), 0) : 0;
-  const totalCOD = totalOrderValue - totalPrepaid;
+  // Value that never got collected because the parcel came back.
+  const totalReturned = orders
+    ? orders.reduce((s, o) => NOT_COLLECTED.has(o.status) ? s + (o.total - prepaidAmount(o)) : s, 0)
+    : 0;
+  const totalCOD = totalOrderValue - totalPrepaid - totalReturned;
   const totalActualShipping = orders
     ? orders.reduce((s, o) => s + (o.courierInvoice?.actualShippingFee ?? 0), 0)
     : 0;
@@ -196,7 +213,8 @@ function CourierInvoiceRow({
                         const actualShipping = o.courierInvoice?.actualShippingFee ?? 0;
                         const diff = chargedShipping - actualShipping;
                         const prepaid = prepaidAmount(o);
-                        const cod = o.total - prepaid;
+                        const returned = NOT_COLLECTED.has(o.status);
+                        const cod = collectableCod(o);
                         const net = cod - actualShipping;
                         return (
                           <TableRow key={o.id} sx={{ '&:last-child td': { border: 0 } }}>
@@ -209,7 +227,11 @@ function CourierInvoiceRow({
                             </TableCell>
                             <TableCell align="right">
                               <Typography variant="body2">{formatCurrency(cod)}</Typography>
-                              {prepaid > 0 && (
+                              {returned ? (
+                                <Typography variant="caption" color="error.main" sx={{ display: 'block', fontWeight: 600 }}>
+                                  {o.status} — nothing collected
+                                </Typography>
+                              ) : prepaid > 0 && (
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                                   {formatCurrency(o.total)} − {formatCurrency(prepaid)} prepaid
                                 </Typography>
@@ -237,34 +259,31 @@ function CourierInvoiceRow({
 
                   {/* Balance summary */}
                   <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#F0F4FF', borderRadius: 1.5, border: '1px solid', borderColor: 'primary.light' }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: totalPrepaid > 0 ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)' }, gap: 1.5 }}>
-                      {totalPrepaid > 0 && (
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">Order totals</Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(totalOrderValue)}</Typography>
+                    {(() => {
+                      // Only show the deduction tiles that actually apply, so a
+                      // straightforward all-COD invoice stays a simple four-column read.
+                      const tiles: { label: string; value: string; strong?: boolean }[] = [];
+                      const hasDeductions = totalPrepaid > 0 || totalReturned > 0;
+                      if (hasDeductions) tiles.push({ label: 'Order totals', value: formatCurrency(totalOrderValue) });
+                      if (totalPrepaid > 0) tiles.push({ label: 'Paid cash/bank', value: `−${formatCurrency(totalPrepaid)}` });
+                      if (totalReturned > 0) tiles.push({ label: 'Returned / cancelled', value: `−${formatCurrency(totalReturned)}` });
+                      tiles.push({ label: hasDeductions ? 'Collectable COD' : 'Total COD', value: formatCurrency(totalCOD) });
+                      tiles.push({ label: 'Actual courier fees', value: `−${formatCurrency(totalActualShipping)}` });
+                      tiles.push({ label: 'Net expected', value: formatCurrency(netExpected) });
+                      tiles.push({ label: 'Received', value: formatCurrency(settlement.totalAmount), strong: true });
+                      return (
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: `repeat(${Math.min(tiles.length, 4)}, 1fr)`, md: `repeat(${tiles.length}, 1fr)` }, gap: 1.5 }}>
+                          {tiles.map(t => (
+                            <Box key={t.label}>
+                              <Typography variant="caption" color="text.secondary">{t.label}</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: t.strong ? 700 : 600, ...(t.strong && { color: NAVY }) }}>
+                                {t.value}
+                              </Typography>
+                            </Box>
+                          ))}
                         </Box>
-                      )}
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {totalPrepaid > 0 ? 'Paid cash/bank' : 'Total COD'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {totalPrepaid > 0 ? `−${formatCurrency(totalPrepaid)}` : formatCurrency(totalCOD)}
-                        </Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">Actual courier fees</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>−{formatCurrency(totalActualShipping)}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">Net expected</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(netExpected)}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">Received</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700, color: NAVY }}>{formatCurrency(settlement.totalAmount)}</Typography>
-                      </Box>
-                    </Box>
+                      );
+                    })()}
                     <Divider sx={{ my: 1 }} />
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>Balance:</Typography>
