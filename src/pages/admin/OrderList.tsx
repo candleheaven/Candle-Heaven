@@ -331,7 +331,7 @@ export default function OrderList() {
       date: paymentForm.date,
       ...(paymentForm.notes.trim() && { notes: paymentForm.notes.trim() }),
     };
-    await adminRecordPayment(detailOrder.id, info);
+    await adminRecordPayment(detailOrder.id, info, detailOrder.orderNumber);
     const updated = { ...detailOrder, paymentStatus: 'paid' as const, paymentInfo: info };
     setDetailOrder(updated);
     setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
