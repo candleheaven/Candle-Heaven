@@ -154,7 +154,7 @@ export default function Dashboard() {
             value={data.lowStockCount}
             icon={<WarningAmberIcon />}
             color={data.lowStockCount > 0 ? '#F44336' : '#4CAF50'}
-            note="Products with stock < 20"
+            note="Products below reorder threshold"
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>

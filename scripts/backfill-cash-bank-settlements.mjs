@@ -34,13 +34,21 @@ const db = getFirestore(app);
 const snap = await db.collection('orders').get();
 
 const candidates = [];
+const noPaymentInfo = [];
 let alreadyLinked = 0;
 let courierPaid = 0;
 
 for (const d of snap.docs) {
   const order = d.data();
   const info = order.paymentInfo;
-  if (!info) continue;
+  if (!info) {
+    // Marked paid via the status dropdown, which never records a method,
+    // amount or date — there is nothing to build a settlement from.
+    if (order.paymentStatus === 'paid' || order.paymentStatus === 'partially_paid') {
+      noPaymentInfo.push(order.orderNumber ?? d.id);
+    }
+    continue;
+  }
   if (info.method === 'courier_invoice') { courierPaid++; continue; }
   if (info.settlementId) { alreadyLinked++; continue; }
   candidates.push({ id: d.id, orderNumber: order.orderNumber ?? d.id, info });
@@ -50,6 +58,14 @@ console.log(`Orders scanned:              ${snap.size}`);
 console.log(`Already linked (skipped):    ${alreadyLinked}`);
 console.log(`Courier invoice (skipped):   ${courierPaid}`);
 console.log(`Settlements to create:       ${candidates.length}\n`);
+
+if (noPaymentInfo.length) {
+  console.log(`WARNING: ${noPaymentInfo.length} order(s) are marked paid but have no payment details`);
+  console.log('(marked via the status dropdown — no method, amount or date recorded).');
+  console.log('These cannot be backfilled; record the payment on each order to settle it:');
+  for (const n of noPaymentInfo) console.log(`  ${n}`);
+  console.log('');
+}
 
 for (const c of candidates) {
   const amount = Number(c.info.amount ?? 0);
