@@ -1238,18 +1238,91 @@ export async function adminGetAllSettlements(): Promise<Settlement[]> {
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement));
 }
 
-export async function adminRecordPayment(orderId: string, paymentInfo: PaymentInfo): Promise<void> {
+/**
+ * Create the cash / bank settlement that mirrors a recorded payment.
+ * Courier-invoice payments are skipped — those settlements are created up front
+ * by adminCreateCourierInvoice and orders are assigned to them separately.
+ * Returns the new settlement id, or undefined when no settlement applies.
+ */
+async function createPaymentSettlement(
+  orderId: string,
+  orderNumber: string | undefined,
+  paymentInfo: PaymentInfo,
+): Promise<string | undefined> {
+  if (paymentInfo.method === 'courier_invoice') return undefined;
+
+  const settlement: Omit<Settlement, 'id'> = {
+    type: paymentInfo.method,
+    reference: paymentInfo.reference,
+    totalAmount: paymentInfo.amount,
+    date: paymentInfo.date,
+    orderIds: [orderId],
+    ...(orderNumber && { orderNumbers: [orderNumber] }),
+    ...(paymentInfo.notes && { notes: paymentInfo.notes }),
+    createdAt: new Date().toISOString(),
+  };
+
+  if (USE_MOCK) {
+    const id = `SP-${Date.now()}`;
+    const existing = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    localStorage.setItem(SETTLEMENTS_KEY, JSON.stringify([{ ...settlement, id }, ...existing]));
+    return id;
+  }
+
+  const ref = await addDoc(collection(db, 'settlements'), settlement);
+  await updateDoc(ref, { id: ref.id });
+  return ref.id;
+}
+
+/** Delete the settlement a payment created, if any. Safe to call when there is none. */
+async function deletePaymentSettlement(settlementId: string | undefined): Promise<void> {
+  if (!settlementId) return;
+
+  if (USE_MOCK) {
+    const list = JSON.parse(localStorage.getItem(SETTLEMENTS_KEY) ?? '[]') as Settlement[];
+    localStorage.setItem(SETTLEMENTS_KEY, JSON.stringify(list.filter(s => s.id !== settlementId)));
+    return;
+  }
+  await deleteDoc(doc(db, 'settlements', settlementId));
+}
+
+/** Read the settlement id stamped on an order's payment, for cleanup on unpay. */
+async function getOrderSettlementId(orderId: string): Promise<string | undefined> {
+  if (USE_MOCK) {
+    const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
+    return orders.find(o => o.id === orderId)?.paymentInfo?.settlementId;
+  }
+  const snap = await getDoc(doc(db, 'orders', orderId));
+  return (snap.data()?.paymentInfo as PaymentInfo | undefined)?.settlementId;
+}
+
+/**
+ * Record a cash / bank / courier payment against an order.
+ * Cash and bank payments also create a matching Settlement so they show up on
+ * the Settlements page — the settlement id is stamped back onto paymentInfo so
+ * the settlement can be removed again if the order is later marked unpaid.
+ */
+export async function adminRecordPayment(
+  orderId: string,
+  paymentInfo: PaymentInfo,
+  orderNumber?: string,
+): Promise<void> {
+  const settlementId = await createPaymentSettlement(orderId, orderNumber, paymentInfo);
+  const stored: PaymentInfo = settlementId ? { ...paymentInfo, settlementId } : paymentInfo;
+
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
-      orders.map(o => o.id === orderId ? { ...o, paymentStatus: 'paid', paymentInfo } : o)
+      orders.map(o => o.id === orderId ? { ...o, paymentStatus: 'paid', paymentInfo: stored } : o)
     ));
     return;
   }
-  await updateDoc(doc(db, 'orders', orderId), { paymentStatus: 'paid', paymentInfo });
+  await updateDoc(doc(db, 'orders', orderId), { paymentStatus: 'paid', paymentInfo: stored });
 }
 
 export async function adminMarkOrderUnpaid(orderId: string): Promise<void> {
+  await deletePaymentSettlement(await getOrderSettlementId(orderId));
+
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
@@ -1267,10 +1340,19 @@ export async function adminMarkOrderUnpaid(orderId: string): Promise<void> {
 }
 
 export async function adminSetPaymentStatus(orderId: string, status: 'unpaid' | 'paid' | 'partially_paid'): Promise<void> {
+  // Clearing the payment also clears the settlement it created.
+  if (status === 'unpaid') await deletePaymentSettlement(await getOrderSettlementId(orderId));
+
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
-      orders.map(o => o.id === orderId ? { ...o, paymentStatus: status } : o)
+      orders.map(o => {
+        if (o.id !== orderId) return o;
+        if (status !== 'unpaid') return { ...o, paymentStatus: status };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { paymentStatus: _ps, paymentInfo: _pi, ...rest } = o;
+        return rest as AdminOrder;
+      })
     ));
     return;
   }

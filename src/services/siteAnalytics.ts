@@ -11,15 +11,17 @@ export async function recordVisit(type: VisitType): Promise<void> {
   const today = todayStr();
   const lsKey = `ch_visit_${type}`;
   if (localStorage.getItem(lsKey) === today) return;
-  localStorage.setItem(lsKey, today);
   try {
     await setDoc(
       doc(db, 'analytics', 'siteVisits'),
       { [`${type}Total`]: increment(1), [`${type}_${today}`]: increment(1) },
       { merge: true },
     );
+    // Only mark as visited after successful write so a rules/network failure
+    // doesn't permanently suppress the count for today.
+    localStorage.setItem(lsKey, today);
   } catch {
-    // non-critical
+    // non-critical — will retry on next page load
   }
 }
 

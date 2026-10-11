@@ -43,6 +43,18 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Amount already settled outside the courier (cash / bank transfer).
+ * The courier only collects the remainder as COD, so this has to come off the
+ * invoice's expected income — otherwise a prepaid order looks like money the
+ * courier still owes us.
+ */
+function prepaidAmount(order: AdminOrder): number {
+  const info = order.paymentInfo;
+  if (!info || info.method === 'courier_invoice') return 0;
+  return info.amount ?? 0;
+}
+
 // ── Balance indicator ─────────────────────────────────────────────────────────
 
 function BalanceChip({ balance }: { balance: number }) {
@@ -78,9 +90,11 @@ function CourierInvoiceRow({
     }
   }
 
-  // Balance = received - (sum COD - sum actualShippingFee)
+  // Balance = received - (sum collectable COD - sum actualShippingFee)
   const hasOrders = orders && orders.length > 0;
-  const totalCOD = orders ? orders.reduce((s, o) => s + o.total, 0) : 0;
+  const totalOrderValue = orders ? orders.reduce((s, o) => s + o.total, 0) : 0;
+  const totalPrepaid = orders ? orders.reduce((s, o) => s + prepaidAmount(o), 0) : 0;
+  const totalCOD = totalOrderValue - totalPrepaid;
   const totalActualShipping = orders
     ? orders.reduce((s, o) => s + (o.courierInvoice?.actualShippingFee ?? 0), 0)
     : 0;
@@ -181,7 +195,9 @@ function CourierInvoiceRow({
                         const chargedShipping = o.deliveryFee ?? 0;
                         const actualShipping = o.courierInvoice?.actualShippingFee ?? 0;
                         const diff = chargedShipping - actualShipping;
-                        const net = o.total - actualShipping;
+                        const prepaid = prepaidAmount(o);
+                        const cod = o.total - prepaid;
+                        const net = cod - actualShipping;
                         return (
                           <TableRow key={o.id} sx={{ '&:last-child td': { border: 0 } }}>
                             <TableCell>
@@ -192,7 +208,12 @@ function CourierInvoiceRow({
                               <Typography variant="caption" color="text.secondary">{o.customer.city}</Typography>
                             </TableCell>
                             <TableCell align="right">
-                              <Typography variant="body2">{formatCurrency(o.total)}</Typography>
+                              <Typography variant="body2">{formatCurrency(cod)}</Typography>
+                              {prepaid > 0 && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  {formatCurrency(o.total)} − {formatCurrency(prepaid)} prepaid
+                                </Typography>
+                              )}
                             </TableCell>
                             <TableCell align="right">
                               <Typography variant="body2" color="text.secondary">{formatCurrency(chargedShipping)}</Typography>
@@ -216,10 +237,20 @@ function CourierInvoiceRow({
 
                   {/* Balance summary */}
                   <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#F0F4FF', borderRadius: 1.5, border: '1px solid', borderColor: 'primary.light' }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 1.5 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: totalPrepaid > 0 ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)' }, gap: 1.5 }}>
+                      {totalPrepaid > 0 && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">Order totals</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(totalOrderValue)}</Typography>
+                        </Box>
+                      )}
                       <Box>
-                        <Typography variant="caption" color="text.secondary">Total COD</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(totalCOD)}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {totalPrepaid > 0 ? 'Paid cash/bank' : 'Total COD'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {totalPrepaid > 0 ? `−${formatCurrency(totalPrepaid)}` : formatCurrency(totalCOD)}
+                        </Typography>
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary">Actual courier fees</Typography>
