@@ -420,6 +420,31 @@ export async function adminUpdateOrderField(
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 
+/** Shipping we actually paid the courier, falling back to what we charged. */
+function orderShippingCost(order: AdminOrder): number {
+  return order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0;
+}
+
+/**
+ * Revenue kept from an order, after paying the courier.
+ * A returned parcel collects nothing but still costs the shipping fee, so it
+ * contributes a loss rather than its order total.
+ */
+function orderRevenue(order: AdminOrder): number {
+  if (order.status === 'returned') return -orderShippingCost(order);
+  return order.total - orderShippingCost(order);
+}
+
+/**
+ * Low stock test mirroring the Products list: thresholds are expressed in
+ * display units (kg / L) while stock is held in base units (g / ml).
+ */
+function isLowStock(p: Product): boolean {
+  const mult = (p.unit === 'kg' || p.unit === 'L') ? 1000 : 1;
+  const threshold = p.lowStockThreshold ?? (mult > 1 ? 0.5 : 20);
+  return p.stock / mult < threshold;
+}
+
 export interface StockValueEntry {
   category: string;
   value: number;
@@ -444,10 +469,13 @@ export async function getAnalytics(): Promise<AnalyticsData> {
   const [orders, products] = await Promise.all([adminGetAllOrders(), adminGetAllProducts()]);
 
   const active = orders.filter(o => o.status !== 'cancelled');
-  const totalRevenue = active.reduce((sum, o) => sum + o.total - (o.courierInvoice?.actualShippingFee ?? o.deliveryFee ?? 0), 0);
+  // Returned orders still count toward revenue (as a shipping loss), but no
+  // goods changed hands, so they are excluded from product/category sales.
+  const sold = active.filter(o => o.status !== 'returned');
+  const totalRevenue = active.reduce((sum, o) => sum + orderRevenue(o), 0);
   const totalOrders = orders.length;
   const totalProducts = products.length;
-  const lowStockCount = products.filter(p => p.stock < 20).length;
+  const lowStockCount = products.filter(isLowStock).length;
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
 
   // Revenue by day — last 30 days
@@ -460,7 +488,7 @@ export async function getAnalytics(): Promise<AnalyticsData> {
   }
   for (const o of active) {
     const day = o.createdAt?.slice(0, 10);
-    if (day && dayMap.has(day)) dayMap.set(day, (dayMap.get(day) ?? 0) + o.total);
+    if (day && dayMap.has(day)) dayMap.set(day, (dayMap.get(day) ?? 0) + orderRevenue(o));
   }
   const revenueByDay = Array.from(dayMap.entries()).map(([date, revenue]) => ({ date, revenue }));
 
@@ -471,7 +499,7 @@ export async function getAnalytics(): Promise<AnalyticsData> {
 
   // Top products by revenue
   const productMap = new Map<string, { name: string; quantity: number; revenue: number }>();
-  for (const o of active) {
+  for (const o of sold) {
     for (const item of o.items) {
       const e = productMap.get(item.productId) ?? { name: item.name, quantity: 0, revenue: 0 };
       e.quantity += item.quantity;
@@ -486,7 +514,7 @@ export async function getAnalytics(): Promise<AnalyticsData> {
   // Revenue by category
   const catMap = new Map<string, number>();
   const productById = new Map(products.map(p => [p.id, p]));
-  for (const o of active) {
+  for (const o of sold) {
     for (const item of o.items) {
       const cat = productById.get(item.productId)?.category ?? 'other';
       catMap.set(cat, (catMap.get(cat) ?? 0) + item.price * item.quantity);
@@ -598,7 +626,8 @@ export interface ProductMonthlyStats {
 
 export async function getProductAnalytics(lookbackMonths = 6): Promise<ProductMonthlyStats[]> {
   const [orders, products] = await Promise.all([adminGetAllOrders(), adminGetAllProducts()]);
-  const active = orders.filter(o => o.status !== 'cancelled');
+  // Returned stock came back on the shelf, so it is not demand to reorder against.
+  const active = orders.filter(o => o.status !== 'cancelled' && o.status !== 'returned');
 
   const now = new Date();
   const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -862,6 +891,23 @@ function orderItemCOGS(item: CartItem, productMap: Map<string, Product>): number
   return baseUnits * cost;
 }
 
+/**
+ * Cost of goods for an order, including packing materials.
+ * A returned order only loses the items recorded as damaged — everything else
+ * went back into stock by adminUpdateOrderStatus, so it costs nothing.
+ */
+function orderCOGS(order: AdminOrder, productMap: Map<string, Product>): number {
+  const allItems = [...order.items, ...(order.packagingItems ?? [])];
+  if (order.status !== 'returned') {
+    return allItems.reduce((s, i) => s + orderItemCOGS(i, productMap), 0);
+  }
+  const damaged = new Map((order.damagedItems ?? []).map(d => [d.cartKey, d.damagedQty]));
+  return allItems.reduce((s, i) => {
+    const qty = damaged.get(i.cartKey) ?? 0;
+    return qty > 0 ? s + orderItemCOGS({ ...i, quantity: qty }, productMap) : s;
+  }, 0);
+}
+
 export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
   const [orders, products, purchases] = await Promise.all([
     adminGetAllOrders(),
@@ -870,14 +916,14 @@ export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
   ]);
 
   const active = orders.filter(o => o.status !== 'cancelled');
+  const sold = active.filter(o => o.status !== 'returned');
   const productMap = new Map(products.map(p => [p.id, p]));
 
   let totalCOGS = 0;
   let totalRevenue = 0;
   for (const order of active) {
-    totalRevenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
-    for (const item of order.items)           totalCOGS += orderItemCOGS(item, productMap);
-    for (const item of order.packagingItems ?? []) totalCOGS += orderItemCOGS(item, productMap);
+    totalRevenue += orderRevenue(order);
+    totalCOGS += orderCOGS(order, productMap);
   }
 
   const totalProfit = totalRevenue - totalCOGS;
@@ -895,9 +941,8 @@ export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
     const day = (order.createdAt as string)?.slice(0, 10);
     if (!day || !dayMap.has(day)) continue;
     const cur = dayMap.get(day)!;
-    cur.revenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
-    for (const item of order.items)               cur.cogs += orderItemCOGS(item, productMap);
-    for (const item of order.packagingItems ?? []) cur.cogs += orderItemCOGS(item, productMap);
+    cur.revenue += orderRevenue(order);
+    cur.cogs += orderCOGS(order, productMap);
   }
   const profitByDay = Array.from(dayMap.entries()).map(([date, { revenue, cogs }]) => ({
     date, revenue: Math.round(revenue), cogs: Math.round(cogs), profit: Math.round(revenue - cogs),
@@ -916,7 +961,7 @@ export async function getProfitAnalytics(): Promise<ProfitAnalytics> {
 
   // By category
   const catMap = new Map<string, { revenue: number; cogs: number }>();
-  for (const order of active) {
+  for (const order of sold) {
     for (const item of order.items) {
       const cat = productMap.get(item.productId)?.category ?? 'other';
       const cur = catMap.get(cat) ?? { revenue: 0, cogs: 0 };
@@ -1164,9 +1209,8 @@ export async function getMonthlyStats(lookbackMonths = 12): Promise<MonthlyStats
     if (!month || !monthMap.has(month)) continue;
     const cur = monthMap.get(month)!;
     cur.orders++;
-    cur.revenue += order.total - (order.courierInvoice?.actualShippingFee ?? order.deliveryFee ?? 0);
-    for (const item of order.items)               cur.cogs += orderItemCOGS(item, productMap);
-    for (const item of order.packagingItems ?? []) cur.cogs += orderItemCOGS(item, productMap);
+    cur.revenue += orderRevenue(order);
+    cur.cogs += orderCOGS(order, productMap);
   }
 
   for (const purchase of purchases) {
