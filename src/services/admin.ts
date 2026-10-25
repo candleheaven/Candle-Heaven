@@ -266,6 +266,15 @@ export interface AdminOrder extends Omit<Order, 'createdAt'> {
   createdAt: string;
 }
 
+/**
+ * Mock orders are stored without an `id` — adminGetAllOrders synthesizes one
+ * from the order number on read. Writes have to match the same way, or they
+ * silently update nothing.
+ */
+function isOrder(o: AdminOrder, orderId: string): boolean {
+  return (o.id ?? o.orderNumber) === orderId;
+}
+
 export async function adminGetAllOrders(): Promise<AdminOrder[]> {
   if (USE_MOCK) {
     seedMockOrdersIfNeeded();
@@ -324,7 +333,7 @@ export async function adminUpdateOrderStatus(
 ): Promise<void> {
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
-    const order = orders.find(o => o.id === orderId);
+    const order = orders.find(o => isOrder(o, orderId));
     if (order) {
       const wasActive = STOCK_ACTIVE.has(order.status as OrderStatus);
       const willBeActive = STOCK_ACTIVE.has(status);
@@ -347,7 +356,7 @@ export async function adminUpdateOrderStatus(
     localStorage.setItem(
       ORDERS_KEY,
       JSON.stringify(orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (!isOrder(o, orderId)) return o;
         return { ...o, status, ...(damagedRecord?.length ? { damagedItems: damagedRecord } : {}) };
       }))
     );
@@ -363,6 +372,16 @@ export async function adminUpdateOrderStatus(
  * Update order items (and packaging items) with proper stock reconciliation.
  * If the order is in a STOCK_ACTIVE status, restores old items and deducts new ones.
  */
+/**
+ * An order-level discount. `label` is what the customer sees on the order —
+ * a promo code they used, or "Admin Discount" when staff set the figure.
+ * An amount of 0 clears the discount off the order entirely.
+ */
+export interface OrderDiscount {
+  amount: number;
+  label?: string;
+}
+
 export async function adminUpdateOrderItems(
   orderId: string,
   newItems: CartItem[],
@@ -370,10 +389,11 @@ export async function adminUpdateOrderItems(
   newSubtotal: number,
   newTotal: number,
   newDeliveryFee?: number,
+  newDiscount?: OrderDiscount,
 ): Promise<void> {
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
-    const order = orders.find(o => o.id === orderId);
+    const order = orders.find(o => isOrder(o, orderId));
     if (order && STOCK_ACTIVE.has(order.status as OrderStatus)) {
       const oldAllItems = [...order.items, ...(order.packagingItems ?? [])];
       const newAllItems = [...newItems, ...newPackagingItems];
@@ -383,23 +403,46 @@ export async function adminUpdateOrderItems(
     localStorage.setItem(
       ORDERS_KEY,
       JSON.stringify(orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (!isOrder(o, orderId)) return o;
         const updated = { ...o, items: newItems, subtotal: newSubtotal, total: newTotal } as AdminOrder;
         if (newDeliveryFee !== undefined) updated.deliveryFee = newDeliveryFee;
         if (newPackagingItems.length > 0) updated.packagingItems = newPackagingItems;
         else delete updated.packagingItems;
+        if (newDiscount) {
+          if (newDiscount.amount > 0) {
+            updated.promoDiscount = newDiscount.amount;
+            if (newDiscount.label) updated.promoCode = newDiscount.label;
+          } else {
+            delete updated.promoDiscount;
+            delete updated.promoCode;
+          }
+        }
         return updated;
       })),
     );
     return;
   }
-  await updateDoc(doc(db, 'orders', orderId), {
+
+  const payload: Record<string, unknown> = {
     items: newItems,
     packagingItems: newPackagingItems.length > 0 ? newPackagingItems : null,
     subtotal: newSubtotal,
     total: newTotal,
-    ...(newDeliveryFee !== undefined && { deliveryFee: newDeliveryFee }),
-  });
+  };
+  if (newDeliveryFee !== undefined) payload.deliveryFee = newDeliveryFee;
+  if (newDiscount) {
+    if (newDiscount.amount > 0) {
+      payload.promoDiscount = newDiscount.amount;
+      if (newDiscount.label) payload.promoCode = newDiscount.label;
+    } else {
+      // Dropping the discount has to remove the fields, not zero them, or the
+      // order keeps showing a discount line worth nothing.
+      payload.promoDiscount = deleteField();
+      payload.promoCode = deleteField();
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await updateDoc(doc(db, 'orders', orderId), payload as any);
 }
 
 export async function adminUpdateOrderField(
@@ -410,7 +453,7 @@ export async function adminUpdateOrderField(
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(
       ORDERS_KEY,
-      JSON.stringify(orders.map(o => (o.id === orderId ? { ...o, ...fields } : o))),
+      JSON.stringify(orders.map(o => (isOrder(o, orderId) ? { ...o, ...fields } : o))),
     );
     return;
   }
@@ -1428,7 +1471,7 @@ async function deletePaymentSettlement(settlementId: string | undefined): Promis
 async function getOrderSettlementId(orderId: string): Promise<string | undefined> {
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
-    return orders.find(o => o.id === orderId)?.paymentInfo?.settlementId;
+    return orders.find(o => isOrder(o, orderId))?.paymentInfo?.settlementId;
   }
   const snap = await getDoc(doc(db, 'orders', orderId));
   return (snap.data()?.paymentInfo as PaymentInfo | undefined)?.settlementId;
@@ -1451,7 +1494,7 @@ export async function adminRecordPayment(
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
-      orders.map(o => o.id === orderId ? { ...o, paymentStatus: 'paid', paymentInfo: stored } : o)
+      orders.map(o => isOrder(o, orderId) ? { ...o, paymentStatus: 'paid', paymentInfo: stored } : o)
     ));
     return;
   }
@@ -1465,7 +1508,7 @@ export async function adminMarkOrderUnpaid(orderId: string): Promise<void> {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
       orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (!isOrder(o, orderId)) return o;
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { paymentStatus: _ps, paymentInfo: _pi, ...rest } = o;
         return rest as AdminOrder;
@@ -1485,7 +1528,7 @@ export async function adminSetPaymentStatus(orderId: string, status: 'unpaid' | 
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
       orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (!isOrder(o, orderId)) return o;
         if (status !== 'unpaid') return { ...o, paymentStatus: status };
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { paymentStatus: _ps, paymentInfo: _pi, ...rest } = o;
@@ -1554,7 +1597,7 @@ export async function adminAssignOrderToInvoice(
   if (USE_MOCK) {
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
-      orders.map(o => o.id === orderId ? { ...o, courierInvoice: assignment } : o)
+      orders.map(o => isOrder(o, orderId) ? { ...o, courierInvoice: assignment } : o)
     ));
     return;
   }
@@ -1567,7 +1610,7 @@ export async function adminUnassignOrderFromInvoice(orderId: string): Promise<vo
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as AdminOrder[];
     localStorage.setItem(ORDERS_KEY, JSON.stringify(
       orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (!isOrder(o, orderId)) return o;
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { courierInvoice: _ci, ...rest } = o;
         return rest as AdminOrder;

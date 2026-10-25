@@ -6,6 +6,7 @@ import {
   MenuItem, Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Divider, InputAdornment, Stack, Alert, Snackbar,
   Tooltip, Autocomplete, IconButton, Collapse, useMediaQuery, useTheme,
+  ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -226,6 +227,8 @@ export default function OrderList() {
   const [editItems, setEditItems] = useState<CartItem[]>([]);
   const [editPackagingItems, setEditPackagingItems] = useState<CartItem[]>([]);
   const [editDeliveryFee, setEditDeliveryFee] = useState(0);
+  const [editDiscountType, setEditDiscountType] = useState<'fixed' | 'percentage'>('fixed');
+  const [editDiscountValue, setEditDiscountValue] = useState(0);
   const [savingItems, setSavingItems] = useState(false);
   const [editProducts, setEditProducts] = useState<Product[]>([]);
   const [editPkgProducts, setEditPkgProducts] = useState<Product[]>([]);
@@ -468,11 +471,21 @@ export default function OrderList() {
 
   // ── Edit items handlers ────────────────────────────────────────────────────
 
+  // Live totals for the edit panel. Percentage discounts round to the rupee,
+  // and a fixed discount can never exceed the subtotal.
+  const editSubtotal = editItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const editDiscountAmount = editDiscountType === 'fixed'
+    ? Math.min(editDiscountValue, editSubtotal)
+    : Math.round(editSubtotal * editDiscountValue / 100);
+  const editTotal = Math.max(0, editSubtotal + editDeliveryFee - editDiscountAmount);
+
   async function startEditItems() {
     if (!detailOrder) return;
     setEditItems([...detailOrder.items]);
     setEditPackagingItems([...(detailOrder.packagingItems ?? [])]);
     setEditDeliveryFee(detailOrder.deliveryFee ?? 0);
+    setEditDiscountType('fixed');
+    setEditDiscountValue(detailOrder.promoDiscount ?? 0);
     setAddItemProduct(null); setAddItemInputValue(''); setAddItemSimpleQty(1);
     setAddPkgProduct(null); setAddPkgQty(1);
     if (editProducts.length === 0) {
@@ -490,17 +503,23 @@ export default function OrderList() {
   async function saveEditItems() {
     if (!detailOrder) return;
     setSavingItems(true);
-    const newSubtotal = editItems.reduce((s, i) => s + i.price * i.quantity, 0);
-    const promoDiscount = detailOrder.promoDiscount ?? 0;
-    const newTotal = Math.max(0, newSubtotal + editDeliveryFee - promoDiscount);
-    await adminUpdateOrderItems(detailOrder.id, editItems, editPackagingItems, newSubtotal, newTotal, editDeliveryFee);
+    // Leaving the figure alone keeps a customer's promo code named as theirs;
+    // changing it makes the discount ours.
+    const discountChanged = editDiscountAmount !== (detailOrder.promoDiscount ?? 0);
+    const label = discountChanged ? 'Admin Discount' : undefined;
+    await adminUpdateOrderItems(
+      detailOrder.id, editItems, editPackagingItems, editSubtotal, editTotal, editDeliveryFee,
+      { amount: editDiscountAmount, label },
+    );
     const updated: AdminOrder = {
       ...detailOrder,
       items: editItems,
       packagingItems: editPackagingItems.length > 0 ? editPackagingItems : undefined,
-      subtotal: newSubtotal,
+      subtotal: editSubtotal,
       deliveryFee: editDeliveryFee,
-      total: newTotal,
+      total: editTotal,
+      promoDiscount: editDiscountAmount > 0 ? editDiscountAmount : undefined,
+      promoCode: editDiscountAmount > 0 ? (label ?? detailOrder.promoCode) : undefined,
     };
     setDetailOrder(updated);
     setOrders(os => os.map(o => o.id === detailOrder.id ? updated : o));
@@ -782,8 +801,28 @@ export default function OrderList() {
                       </TableRow>
                     ))}
                     <TableRow>
-                      <TableCell colSpan={3} align="right" sx={{ fontWeight: 700, border: 0, pt: 1.5 }}>Total</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700, color: NAVY, border: 0, pt: 1.5 }}>{formatCurrency(detailOrder.total)}</TableCell>
+                      <TableCell colSpan={3} align="right" sx={{ border: 0, color: 'text.secondary', fontSize: 13, pt: 1.5 }}>Subtotal</TableCell>
+                      <TableCell align="right" sx={{ border: 0, pt: 1.5 }}>{formatCurrency(detailOrder.subtotal)}</TableCell>
+                    </TableRow>
+                    {!!detailOrder.promoDiscount && (
+                      <TableRow>
+                        <TableCell colSpan={3} align="right" sx={{ border: 0, color: 'text.secondary', fontSize: 13 }}>
+                          Discount{detailOrder.promoCode ? ` (${detailOrder.promoCode})` : ''}
+                        </TableCell>
+                        <TableCell align="right" sx={{ border: 0, color: 'success.main', fontWeight: 600 }}>
+                          −{formatCurrency(detailOrder.promoDiscount)}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!!detailOrder.deliveryFee && (
+                      <TableRow>
+                        <TableCell colSpan={3} align="right" sx={{ border: 0, color: 'text.secondary', fontSize: 13 }}>Delivery Fee</TableCell>
+                        <TableCell align="right" sx={{ border: 0 }}>{formatCurrency(detailOrder.deliveryFee)}</TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow>
+                      <TableCell colSpan={3} align="right" sx={{ fontWeight: 700, border: 0, pt: 1 }}>Total</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: NAVY, border: 0, pt: 1 }}>{formatCurrency(detailOrder.total)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -843,7 +882,34 @@ export default function OrderList() {
                       <TableRow>
                         <TableCell colSpan={3} align="right" sx={{ fontWeight: 700, border: 0, pt: 1 }}>Subtotal</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, color: NAVY, border: 0, pt: 1 }}>
-                          {formatCurrency(editItems.reduce((s, i) => s + i.price * i.quantity, 0))}
+                          {formatCurrency(editSubtotal)}
+                        </TableCell>
+                        <TableCell sx={{ border: 0 }} />
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={3} align="right" sx={{ border: 0, color: 'text.secondary', fontSize: 13 }}>Discount</TableCell>
+                        <TableCell align="right" sx={{ border: 0 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
+                            <ToggleButtonGroup
+                              value={editDiscountType} exclusive size="small"
+                              onChange={(_, v) => v && setEditDiscountType(v)}
+                            >
+                              <ToggleButton value="fixed" sx={{ px: 1.25, py: 0.25, fontSize: 11, lineHeight: 1.8 }}>LKR</ToggleButton>
+                              <ToggleButton value="percentage" sx={{ px: 1.25, py: 0.25, fontSize: 11, lineHeight: 1.8 }}>%</ToggleButton>
+                            </ToggleButtonGroup>
+                            <TextField
+                              type="number" size="small" value={editDiscountValue || ''}
+                              onChange={e => setEditDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                              placeholder="0"
+                              slotProps={{ htmlInput: { min: 0, max: editDiscountType === 'percentage' ? 100 : undefined, step: 'any', style: { textAlign: 'right', padding: '4px 6px', width: 70 } } }}
+                              sx={{ width: 120 }}
+                            />
+                          </Box>
+                          {editDiscountAmount > 0 && (
+                            <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600, display: 'block', mt: 0.25 }}>
+                              −{formatCurrency(editDiscountAmount)}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell sx={{ border: 0 }} />
                       </TableRow>
@@ -860,6 +926,13 @@ export default function OrderList() {
                             }}
                             sx={{ width: 120 }}
                           />
+                        </TableCell>
+                        <TableCell sx={{ border: 0 }} />
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={3} align="right" sx={{ fontWeight: 700, border: 0, pt: 1 }}>Total</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, color: NAVY, border: 0, pt: 1 }}>
+                          {formatCurrency(editTotal)}
                         </TableCell>
                         <TableCell sx={{ border: 0 }} />
                       </TableRow>
