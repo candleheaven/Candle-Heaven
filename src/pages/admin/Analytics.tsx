@@ -12,12 +12,17 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, LineChart, Line, ComposedChart, Area,
 } from 'recharts';
-import { getProductAnalytics, getMonthlyStats, SEASONAL_MULTIPLIERS, MONTH_NAMES } from '../../services/admin';
-import type { ProductMonthlyStats, MonthlyStats } from '../../services/admin';
+import { getProductAnalytics, getMonthlyStats, getCashFlowStats, SEASONAL_MULTIPLIERS, MONTH_NAMES } from '../../services/admin';
+import type { ProductMonthlyStats, MonthlyStats, CashFlowMonth } from '../../services/admin';
 
 const NAVY = '#132040';
 const GOLD = '#C9A96E';
 const COLORS = ['#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646', '#2E75B6'];
+
+// Cash-flow series. Picked for colour-blind separation against each other rather
+// than to match GOLD — the brand gold reads as grey to the validator.
+const CASH_IN  = '#C08A2E';
+const CASH_OUT = '#D7263D';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +68,7 @@ function fmt(n: number) { return `LKR ${n.toLocaleString()}`; }
 export default function Analytics() {
   const [data, setData] = useState<ProductMonthlyStats[]>([]);
   const [monthly, setMonthly] = useState<MonthlyStats[]>([]);
+  const [cashFlow, setCashFlow] = useState<CashFlowMonth[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lookback, setLookback] = useState(6);
@@ -70,8 +76,8 @@ export default function Analytics() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getProductAnalytics(lookback), getMonthlyStats(lookback)])
-      .then(([d, m]) => { setData(d); setMonthly(m); })
+    Promise.all([getProductAnalytics(lookback), getMonthlyStats(lookback), getCashFlowStats(lookback)])
+      .then(([d, m, c]) => { setData(d); setMonthly(m); setCashFlow(c); })
       .catch(() => setError('Failed to load analytics data.'))
       .finally(() => setLoading(false));
   }, [lookback]);
@@ -82,6 +88,18 @@ export default function Analytics() {
   const nextMonthName = MONTH_NAMES[nextMonthIdx];
   const seasonalFactor = SEASONAL_MULTIPLIERS[nextMonthIdx];
   const seasonalLabel = seasonalFactor >= 1.25 ? 'Peak Season 🔥' : seasonalFactor >= 1.05 ? 'Above Average' : seasonalFactor >= 0.95 ? 'Normal' : 'Below Average';
+
+  // Cash-flow totals across the lookback window
+  const cashTotals = useMemo(() => cashFlow.reduce(
+    (t, m) => ({
+      income: t.income + m.income,
+      purchaseCost: t.purchaseCost + m.purchaseCost,
+      shippingCost: t.shippingCost + m.shippingCost,
+      expenses: t.expenses + m.expenses,
+      net: t.net + m.net,
+    }),
+    { income: 0, purchaseCost: 0, shippingCost: 0, expenses: 0, net: 0 },
+  ), [cashFlow]);
 
   // Summary stats
   const totalRevenue = useMemo(() => data.reduce((s, p) => s + p.totalRevenue, 0), [data]);
@@ -255,6 +273,81 @@ export default function Analytics() {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* ── Money In vs Money Out ────────────────────────────────────────────── */}
+      {cashFlow.length > 0 && (
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, overflow: 'hidden', mb: 3 }}>
+          <Box sx={{ p: 3, pb: 0 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>Money In vs Money Out</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Counted on the day the money moved — income when the customer paid, courier fees the same day, purchases on their own date. Not profit.
+            </Typography>
+            <Divider />
+          </Box>
+
+          <Box sx={{ p: 3 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={cashFlow} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9E9E9E" />
+                <YAxis tick={{ fontSize: 11 }} stroke="#9E9E9E" tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                <RTooltip formatter={(v: number, name: string) => [fmt(v), name]} contentStyle={{ borderRadius: 8, fontSize: 13 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {/* Net is deliberately not plotted: its negative swings double the
+                    axis range and flatten the bars. It lives in the table below. */}
+                <Bar dataKey="income" name="Income" fill={CASH_IN} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expenses" name="Expenses" fill={CASH_OUT} radius={[4, 4, 0, 0]} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </Box>
+
+          <Box sx={{ overflowX: 'auto' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#F8F9FA' }}>
+                  {['Month', 'Income', 'Purchases', 'Courier', 'Total Out', 'Net'].map(h => (
+                    <TableCell key={h} sx={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                      {h}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {[...cashFlow].reverse().map(m => (
+                  <TableRow key={m.month} sx={{ '&:hover': { bgcolor: 'action.hover' }, '&:last-child td': { border: 0 } }}>
+                    <TableCell sx={{ fontWeight: 600 }}>{m.label}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 500 }}>{m.income > 0 ? fmt(m.income) : '—'}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{m.purchaseCost > 0 ? fmt(m.purchaseCost) : '—'}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{m.shippingCost > 0 ? fmt(m.shippingCost) : '—'}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 500 }}>{m.expenses > 0 ? fmt(m.expenses) : '—'}</TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        sx={{ fontWeight: 700, fontFamily: 'monospace', color: m.net > 0 ? 'success.main' : m.net < 0 ? 'error.main' : 'text.disabled' }}
+                      >
+                        {m.net !== 0 ? fmt(m.net) : '—'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {/* Totals row */}
+                <TableRow sx={{ bgcolor: '#F8F9FA' }}>
+                  <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{fmt(cashTotals.income)}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{fmt(cashTotals.purchaseCost)}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{fmt(cashTotals.shippingCost)}</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{fmt(cashTotals.expenses)}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', color: cashTotals.net >= 0 ? 'success.main' : 'error.main' }}>
+                      {fmt(cashTotals.net)}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </Box>
+        </Paper>
+      )}
 
       {/* ── Monthly Performance ──────────────────────────────────────────────── */}
       {monthly.length > 0 && (

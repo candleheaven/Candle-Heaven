@@ -16,12 +16,16 @@ import {
   BarChart, Bar, Line, ComposedChart,
 } from 'recharts';
 import InventoryIcon from '@mui/icons-material/Inventory2';
-import { getAnalytics, getProfitAnalytics, getMonthlyStats, type AnalyticsData, type ProfitAnalytics, type StockValueEntry, type MonthlyStats } from '../../services/admin';
+import { getAnalytics, getProfitAnalytics, getMonthlyStats, getCashFlowStats, type AnalyticsData, type ProfitAnalytics, type StockValueEntry, type MonthlyStats, type CashFlowMonth } from '../../services/admin';
 import { getVisitStats, type VisitStats } from '../../services/siteAnalytics';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 
 const GOLD = '#C9A96E';
 const NAVY = '#132040';
+
+// Cash-flow accents, shared with the Analytics chart.
+const CASH_IN  = '#C08A2E';
+const CASH_OUT = '#D7263D';
 
 const STATUS_COLORS: Record<string, string> = {
   pending:   '#FF9800',
@@ -84,20 +88,40 @@ function StatCard({
   );
 }
 
+// "2026-10" -> "October 2026". The short "Oct 26" used in the monthly tables
+// reads as a day-of-month when it stands alone on a card.
+function monthTitle(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+function CashFigure({
+  label, value, color, note,
+}: { label: string; value: string; color: string; note: string }) {
+  return (
+    <Box sx={{ borderLeft: '3px solid', borderColor: color, pl: 1.5 }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="h5" sx={{ fontWeight: 700, color: NAVY }}>{value}</Typography>
+      <Typography variant="caption" color="text.secondary">{note}</Typography>
+    </Box>
+  );
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [profitData, setProfitData] = useState<ProfitAnalytics | null>(null);
   const [monthly, setMonthly] = useState<MonthlyStats[]>([]);
+  const [cashFlow, setCashFlow] = useState<CashFlowMonth[]>([]);
   const [visits, setVisits] = useState<VisitStats | null>(null);
   const [loading, setLoading] = useState(true);
   const theme = useTheme();
 
   useEffect(() => {
-    Promise.all([getAnalytics(), getProfitAnalytics(), getMonthlyStats(6), getVisitStats()]).then(([d, p, m, v]) => {
+    Promise.all([getAnalytics(), getProfitAnalytics(), getMonthlyStats(6), getVisitStats(), getCashFlowStats(1)]).then(([d, p, m, v, c]) => {
       setData(d);
       setProfitData(p);
       setMonthly(m);
       setVisits(v);
+      setCashFlow(c);
       setLoading(false);
     });
   }, []);
@@ -113,6 +137,7 @@ export default function Dashboard() {
   if (!data) return null;
 
   const chartHeight = 280;
+  const thisMonth = cashFlow[cashFlow.length - 1];
 
   return (
     <Box>
@@ -176,6 +201,50 @@ export default function Dashboard() {
           />
         </Grid>
       </Grid>
+
+      {/* This month — money in vs money out */}
+      {thisMonth && (
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 3 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Money In vs Money Out
+              </Typography>
+              <Chip label={monthTitle(thisMonth.month)} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              Counted on the day the money moved, not when the order was placed. This is cash, not profit.
+            </Typography>
+
+            <Grid container spacing={2} sx={{ mt: 0.5 }}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <CashFigure
+                  label="Income"
+                  value={fmt(thisMonth.income)}
+                  color={CASH_IN}
+                  note="Collected from customers, incl. delivery"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <CashFigure
+                  label="Expenses"
+                  value={fmt(thisMonth.expenses)}
+                  color={CASH_OUT}
+                  note={`${fmt(thisMonth.purchaseCost)} stock · ${fmt(thisMonth.shippingCost)} courier`}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <CashFigure
+                  label="Net"
+                  value={fmt(thisMonth.net)}
+                  color={thisMonth.net >= 0 ? '#2E7D32' : '#C62828'}
+                  note={thisMonth.net >= 0 ? 'Ahead this month' : 'Behind this month'}
+                />
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts row 1 */}
       <Grid container spacing={2} sx={{ mb: 2 }}>

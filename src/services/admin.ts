@@ -1231,6 +1231,100 @@ export async function getMonthlyStats(lookbackMonths = 12): Promise<MonthlyStats
   });
 }
 
+// ─── Cash flow — income vs expense ────────────────────────────────────────────
+
+export interface CashFlowMonth {
+  month: string;        // YYYY-MM
+  label: string;        // "Jun 25"
+  income: number;       // collected from customers, incl. the delivery fee charged
+  purchaseCost: number; // stock bought from suppliers
+  shippingCost: number; // paid to the courier
+  expenses: number;     // purchaseCost + shippingCost
+  net: number;          // income - expenses
+}
+
+/**
+ * Money in vs money out per calendar month, on a cash basis — every figure is
+ * dated to the day the money actually moved, not the day the order was placed:
+ *
+ * - Income is what the customer actually handed over (`paymentInfo.amount`,
+ *   or the order total when a payment was flagged without the detail), dated
+ *   on `paymentInfo.date`. Unpaid orders contribute nothing whatever their
+ *   fulfillment status.
+ * - The courier fee for an order is dated the same day its money came in.
+ * - A returned parcel collects nothing but is still billed, so its fee is
+ *   dated to its courier invoice instead, or to the order date if it never
+ *   reached one.
+ * - Purchases land on their own date.
+ *
+ * Deliberately not profit: stock cost appears when it was bought rather than
+ * when it was sold, so COGS plays no part here. Use getMonthlyStats for margin.
+ */
+export async function getCashFlowStats(lookbackMonths = 12): Promise<CashFlowMonth[]> {
+  const [orders, purchases, settlements] = await Promise.all([
+    adminGetAllOrders(),
+    adminGetAllPurchases(),
+    adminGetAllSettlements(),
+  ]);
+
+  const now = new Date();
+  const months: { key: string; label: string }[] = [];
+  for (let i = lookbackMonths - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i, 1));
+    months.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) });
+  }
+
+  type Bucket = { income: number; purchaseCost: number; shippingCost: number };
+  const monthMap = new Map<string, Bucket>();
+  for (const m of months) monthMap.set(m.key, { income: 0, purchaseCost: 0, shippingCost: 0 });
+
+  // Drop an amount into the month it was paid or received. Anything dated
+  // outside the lookback window is simply not part of this view.
+  function add(date: string | undefined, field: keyof Bucket, amount: number): void {
+    if (!date || !amount) return;
+    const bucket = monthMap.get(date.slice(0, 7));
+    if (bucket) bucket[field] += amount;
+  }
+
+  const invoiceDates = new Map(settlements.map(s => [s.id, s.date]));
+
+  for (const order of orders) {
+    if (order.status === 'cancelled') continue;
+    const orderDate = (order.createdAt as string | undefined)?.slice(0, 10);
+    const shipping = orderShippingCost(order);
+
+    if (order.paymentStatus === 'paid' || order.paymentStatus === 'partially_paid') {
+      // adminSetPaymentStatus can flip the flag without recording a payment,
+      // which leaves no date to go on — the order date is the best guess.
+      const paidOn = order.paymentInfo?.date ?? orderDate;
+      add(paidOn, 'income', order.paymentInfo?.amount ?? order.total);
+      add(paidOn, 'shippingCost', shipping);
+      continue;
+    }
+
+    if (order.status === 'returned') {
+      const invoiced = order.courierInvoice && invoiceDates.get(order.courierInvoice.invoiceId);
+      add(invoiced || orderDate, 'shippingCost', shipping);
+    }
+  }
+
+  for (const purchase of purchases) add(purchase.date, 'purchaseCost', purchase.totalCost);
+
+  return months.map(m => {
+    const b = monthMap.get(m.key)!;
+    const expenses = b.purchaseCost + b.shippingCost;
+    return {
+      month: m.key,
+      label: m.label,
+      income: Math.round(b.income),
+      purchaseCost: Math.round(b.purchaseCost),
+      shippingCost: Math.round(b.shippingCost),
+      expenses: Math.round(expenses),
+      net: Math.round(b.income - expenses),
+    };
+  });
+}
+
 export async function getOrderProfitBreakdown(order: AdminOrder): Promise<OrderProfitBreakdown> {
   const products = await adminGetAllProducts();
   const productMap = new Map(products.map(p => [p.id, p]));
