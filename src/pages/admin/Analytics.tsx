@@ -12,7 +12,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, LineChart, Line, ComposedChart, Area,
 } from 'recharts';
-import { getProductAnalytics, getMonthlyStats, getCashFlowStats, SEASONAL_MULTIPLIERS, MONTH_NAMES } from '../../services/admin';
+import { getProductAnalytics, getMonthlyStats, getCashFlowStats, CASH_FLOW_START_MONTH, SEASONAL_MULTIPLIERS, MONTH_NAMES } from '../../services/admin';
 import type { ProductMonthlyStats, MonthlyStats, CashFlowMonth } from '../../services/admin';
 
 const NAVY = '#132040';
@@ -88,6 +88,9 @@ export default function Analytics() {
   const nextMonthName = MONTH_NAMES[nextMonthIdx];
   const seasonalFactor = SEASONAL_MULTIPLIERS[nextMonthIdx];
   const seasonalLabel = seasonalFactor >= 1.25 ? 'Peak Season 🔥' : seasonalFactor >= 1.05 ? 'Above Average' : seasonalFactor >= 0.95 ? 'Normal' : 'Below Average';
+
+  const cashFlowStartLabel = new Date(`${CASH_FLOW_START_MONTH}-01T00:00:00Z`)
+    .toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
   // Cash-flow totals across the lookback window
   const cashTotals = useMemo(() => cashFlow.reduce(
@@ -281,6 +284,7 @@ export default function Analytics() {
             <Typography variant="h6" sx={{ fontWeight: 600 }}>Money In vs Money Out</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Counted on the day the money moved — income when the customer paid, courier fees the same day, purchases on their own date. Not profit.
+              {cashFlow[0]?.month === CASH_FLOW_START_MONTH && ` Starts ${cashFlowStartLabel} — stock carried over when the shop moved onto this app was booked as purchases before then.`}
             </Typography>
             <Divider />
           </Box>

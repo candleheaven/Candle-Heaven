@@ -1276,6 +1276,14 @@ export async function getMonthlyStats(lookbackMonths = 12): Promise<MonthlyStats
 
 // ─── Cash flow — income vs expense ────────────────────────────────────────────
 
+/**
+ * Cash flow is only meaningful from this month on. Everything already in stock
+ * when the shop moved onto this app was entered as purchases dated June 2026,
+ * so that month reads as a huge loss that never happened. Months before this
+ * are left out of the view rather than shown.
+ */
+export const CASH_FLOW_START_MONTH = '2026-07';
+
 export interface CashFlowMonth {
   month: string;        // YYYY-MM
   label: string;        // "Jun 25"
@@ -1314,7 +1322,9 @@ export async function getCashFlowStats(lookbackMonths = 12): Promise<CashFlowMon
   const months: { key: string; label: string }[] = [];
   for (let i = lookbackMonths - 1; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - i, 1));
-    months.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) });
+    const key = d.toISOString().slice(0, 7);
+    if (key < CASH_FLOW_START_MONTH) continue;
+    months.push({ key, label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) });
   }
 
   type Bucket = { income: number; purchaseCost: number; shippingCost: number };
