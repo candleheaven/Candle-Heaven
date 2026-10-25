@@ -856,7 +856,7 @@ export default function OrderList() {
                             placeholder="0"
                             slotProps={{
                               input: { startAdornment: <InputAdornment position="start"><Typography variant="caption" color="text.secondary">LKR</Typography></InputAdornment> },
-                              htmlInput: { min: 0, step: 50, style: { textAlign: 'right', padding: '4px 6px', width: 70 } },
+                              htmlInput: { min: 0, step: 'any', style: { textAlign: 'right', padding: '4px 6px', width: 70 } },
                             }}
                             sx={{ width: 120 }}
                           />

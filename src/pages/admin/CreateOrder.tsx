@@ -1230,7 +1230,7 @@ export default function CreateOrder() {
                           placeholder="0" sx={{ width: 130 }}
                           slotProps={{
                             input: { startAdornment: <InputAdornment position="start"><Typography variant="caption" color="text.secondary">LKR</Typography></InputAdornment> },
-                            htmlInput: { min: 0, step: 50, style: { textAlign: 'right', padding: '4px 6px' } },
+                            htmlInput: { min: 0, step: 'any', style: { textAlign: 'right', padding: '4px 6px' } },
                           }}
                         />
                       </Box>
@@ -1245,7 +1245,7 @@ export default function CreateOrder() {
                           <TextField type="number" size="small" value={discountValue || ''}
                             onChange={e => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
                             placeholder="0" sx={{ width: 90 }}
-                            slotProps={{ htmlInput: { min: 0, max: discountType === 'percentage' ? 100 : undefined, step: discountType === 'percentage' ? 5 : 100, style: { textAlign: 'right', padding: '4px 6px' } } }}
+                            slotProps={{ htmlInput: { min: 0, max: discountType === 'percentage' ? 100 : undefined, step: 'any', style: { textAlign: 'right', padding: '4px 6px' } } }}
                           />
                         </Box>
                       </Box>
