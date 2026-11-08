@@ -8,9 +8,11 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { DeleteOutlined as DeleteOutlineIcon } from '@mui/icons-material';
 import { HelpOutlined as HelpOutlineIcon } from '@mui/icons-material';
 import { adminGetAllProducts, adminAddProduct, adminUpdateProduct } from '../../services/admin';
+import { uploadProductImage, ImageUploadError, ACCEPT_ATTR } from '../../services/images';
 import type { Product, PriceTier, PackComponent } from '../../types';
 
 const NAVY = '#132040';
@@ -98,6 +100,7 @@ export default function ProductForm() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [newCompProductId, setNewCompProductId] = useState('');
@@ -215,6 +218,24 @@ export default function ProductForm() {
       }
     }
     return '';
+  }
+
+  async function handleImagePick(file: File | undefined, slot: number) {
+    if (!file) return;
+    setUploadingIdx(slot);
+    setError('');
+    try {
+      const url = await uploadProductImage(file, id);
+      setForm(f => {
+        const u = [...f.imageUrls];
+        u[slot] = url;
+        return { ...f, imageUrls: u };
+      });
+    } catch (err) {
+      setError(err instanceof ImageUploadError ? err.message : 'Upload failed. Please try again.');
+    } finally {
+      setUploadingIdx(null);
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -791,8 +812,19 @@ export default function ProductForm() {
                       fullWidth
                       size="small"
                       placeholder="/products/softsoywax.jpg"
-                      helperText={i === 0 ? 'Path relative to public folder or a full URL' : undefined}
+                      helperText={i === 0 ? 'Upload with the camera button, or paste a path / URL' : undefined}
                     />
+                    <Tooltip title="Upload from this device">
+                      <Box component="label" sx={{ flexShrink: 0 }}>
+                        <input
+                          type="file" accept={ACCEPT_ATTR} hidden
+                          onChange={e => { handleImagePick(e.target.files?.[0], i); e.target.value = ''; }}
+                        />
+                        <IconButton component="span" size="small" disabled={uploadingIdx !== null}>
+                          {uploadingIdx === i ? <CircularProgress size={18} /> : <PhotoCameraIcon fontSize="small" />}
+                        </IconButton>
+                      </Box>
+                    </Tooltip>
                     {url && (
                       <Box component="img" src={url} alt=""
                         sx={{ height: 48, width: 48, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: 'divider', flexShrink: 0 }}
