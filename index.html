@@ -7,20 +7,6 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <script>
-      // Pick the manifest while Safari is still parsing <head>. iOS reads the
-      // manifest at page load, so swapping it later (from React) is too late —
-      // the admin would install under the shop's name and icon.
-      // iOS also ignores the manifest's start_url and pins whatever URL you are
-      // on, so installing the admin means loading /admin/* directly first.
-      if (location.pathname.indexOf('/admin') === 0) {
-        document.querySelector('link[rel="manifest"]').href = '/admin-manifest.json';
-        var t = document.createElement('meta');
-        t.name = 'apple-mobile-web-app-title';
-        t.content = 'CH Admin';
-        document.head.appendChild(t);
-      }
-    </script>
     <meta name="theme-color" content="#132040" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Candle Heaven</title>

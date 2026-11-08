@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+    <link rel="apple-touch-icon" href="/logo.jpg" />
+    <!--
+      A separate entry point purely so the admin can be installed as its own
+      app. iOS commits to whichever manifest it parses here and will not pick
+      up a later change, so the admin needs its own document rather than a
+      swap performed at runtime. vercel.json routes /admin/* to this file.
+      The app itself is identical — same bundle, same router.
+    -->
+    <link rel="manifest" href="/admin-manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CH Admin" />
+    <meta name="theme-color" content="#132040" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CH Admin</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
