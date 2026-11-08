@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   Box, Drawer, AppBar, Toolbar, Typography, IconButton,
@@ -134,11 +134,9 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
 export default function AdminLayout() {
   const { isAdminAuthenticated, initializing } = useAdminAuth();
 
-  useEffect(() => {
-    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-    if (link) link.href = '/admin-manifest.json';
-    return () => { if (link) link.href = '/manifest.json'; };
-  }, []);
+  // The manifest is chosen by an inline script in index.html, early enough for
+  // iOS to see it. Doing it here as well would run too late to matter, and the
+  // unmount cleanup would reset it to the shop's manifest on /admin/login.
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [drawerOpen, setDrawerOpen] = useState(false);
