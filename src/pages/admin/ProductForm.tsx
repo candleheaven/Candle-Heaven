@@ -101,6 +101,7 @@ export default function ProductForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
   const [error, setError] = useState('');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [newCompProductId, setNewCompProductId] = useState('');
@@ -225,12 +226,13 @@ export default function ProductForm() {
     setUploadingIdx(slot);
     setError('');
     try {
-      const url = await uploadProductImage(file, id);
+      const url = await uploadProductImage(file, form.name);
       setForm(f => {
         const u = [...f.imageUrls];
         u[slot] = url;
         return { ...f, imageUrls: u };
       });
+      setUploadPending(true);
     } catch (err) {
       setError(err instanceof ImageUploadError ? err.message : 'Upload failed. Please try again.');
     } finally {
@@ -841,6 +843,12 @@ export default function ProductForm() {
                 <Button size="small" startIcon={<AddIcon />} onClick={() => setForm(f => ({ ...f, imageUrls: [...f.imageUrls, ''] }))} sx={{ mt: 0.5 }}>
                   Add image
                 </Button>
+                {uploadPending && (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Uploaded images are committed to the site and go live once it rebuilds — usually a minute or two.
+                    Until then the preview above will not load.
+                  </Alert>
+                )}
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <FormControlLabel

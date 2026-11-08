@@ -1,5 +1,4 @@
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from './firebase';
+import { auth } from './firebase';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true' || !import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
@@ -72,38 +71,49 @@ function validate(file: File): void {
   }
 }
 
+/** Turn a product name into the file name stem, so uploads are recognisable in git. */
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+}
+
 /**
- * Upload one product photo and return the URL to store on the product.
+ * Upload one product photo and return the path to store on the product.
  *
- * In mock mode there is no Storage bucket, so the downscaled image comes back
- * as a data URL. That keeps the form usable offline, but such a URL is carried
- * inside the product record itself — fine for development, never for real data.
+ * The image is committed to public/products/ on GitHub by api/upload-image,
+ * which triggers a Vercel rebuild. The path returned is therefore NOT live yet
+ * — it serves once that deploy finishes, usually a minute or two. Callers that
+ * want to show the image immediately should keep their own local preview.
+ *
+ * In mock mode there is no API route, so the processed image comes back as a
+ * data URL instead. Fine for development, never for real data.
  */
-export async function uploadProductImage(file: File, productId?: string): Promise<string> {
+export async function uploadProductImage(file: File, productName?: string): Promise<string> {
   validate(file);
   const processed = await downscale(file);
 
   if (USE_MOCK) return blobToDataUrl(processed);
 
-  // Collision-proof without needing a read first: products can be created
-  // before they have an id, and two uploads can land in the same millisecond.
-  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const path = `products/${productId ?? 'new'}/${unique}.jpg`;
-  const objectRef = ref(storage, path);
-  await uploadBytes(objectRef, processed, { contentType: 'image/jpeg', cacheControl: 'public,max-age=31536000' });
-  return getDownloadURL(objectRef);
-}
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new ImageUploadError('Your admin session has expired. Please sign in again.');
 
-/**
- * Remove an uploaded image from Storage. Silently ignores anything we did not
- * upload — committed /products/* paths and external URLs are not ours to delete.
- */
-export async function deleteProductImage(url: string): Promise<void> {
-  if (USE_MOCK || !url.startsWith('https://firebasestorage.googleapis.com/')) return;
-  try {
-    await deleteObject(ref(storage, url));
-  } catch {
-    // Already gone, or still referenced by another product that was copied
-    // from this one. Not worth failing the save over.
+  const dataUrl = await blobToDataUrl(processed);
+  const contentBase64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+
+  // Unique, so an upload never overwrites an existing image — including the
+  // older photos already committed by hand.
+  const stem = (productName && slugify(productName)) || 'product';
+  const filename = `${stem}-${Date.now().toString(36)}.jpg`;
+
+  const res = await fetch('/api/upload-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ filename, contentBase64 }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ImageUploadError(body.error ?? 'Upload failed. Please try again.');
   }
+  const { path } = await res.json();
+  return path as string;
 }
